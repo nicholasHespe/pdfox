@@ -8,43 +8,43 @@ import { embedAnnotations } from './saver.js';
 
 // ── State ──────────────────────────────────────────────────────
 
-const tabs      = [];  // array of TabState
+const tabs      = [];
 let   activeTab = null;
+let   _paneScrollCleanup = null; // removes the scroll listener for the current pane
 
 // ── DOM refs ───────────────────────────────────────────────────
 
-const tabBar       = document.getElementById('tab-bar');
-const viewerHost   = document.getElementById('viewer-host');
-const emptyState   = document.getElementById('empty-state');
-const colorPicker  = document.getElementById('color-picker');
+const tabBar         = document.getElementById('tab-bar');
+const viewerHost     = document.getElementById('viewer-host');
+const emptyState     = document.getElementById('empty-state');
 const thicknessInput = document.getElementById('thickness');
-const tocPanel     = document.getElementById('toc-panel');
-const tocToggle    = document.getElementById('toc-toggle');
-const tocTree      = document.getElementById('toc-tree');
+const tocPanel       = document.getElementById('toc-panel');
+const tocToggle      = document.getElementById('toc-toggle');
+const tocTree        = document.getElementById('toc-tree');
+const pageInput      = document.getElementById('page-input');
+const pageTotal      = document.getElementById('page-total');
+const btnBold        = document.getElementById('btn-bold');
+const btnUnderline   = document.getElementById('btn-underline');
 
 // ── Tab management ─────────────────────────────────────────────
 
 function createTab(filePath, pdfData) {
   const id = Date.now();
 
-  const pane   = document.createElement('div');
+  const pane  = document.createElement('div');
   pane.className = 'viewer-pane';
-  const pages  = document.createElement('div');
+  const pages = document.createElement('div');
   pages.className = 'pdf-pages';
   pane.appendChild(pages);
   viewerHost.appendChild(pane);
 
-  const viewer = new PDFViewer(pages);
-  // Store an independent copy — viewer.load() makes its own copy for PDF.js
+  const viewer   = new PDFViewer(pages);
   const pdfBytes = pdfData instanceof Uint8Array ? pdfData.slice() : new Uint8Array(pdfData);
 
   const state = {
-    id,
-    filePath,
-    pdfBytes,
-    viewer,
+    id, filePath, pdfBytes, viewer,
     annotator: null,
-    outline:   null, // cached PDF outline (or null)
+    outline:   null,
     pane,
     dirty: false,
     tabEl: null,
@@ -84,19 +84,24 @@ function switchTab(tab) {
   tab.pane.classList.add('active');
   emptyState.style.display = 'none';
   renderTabBar();
-  // Sync toolbar to this tab's annotator settings
+
   if (tab.annotator) {
-    colorPicker.value    = tab.annotator.color;
     thicknessInput.value = tab.annotator.thickness;
     syncToolButtons(tab.annotator.tool);
+    syncTextFormatButtons(tab.annotator);
   }
-  // Render this tab's TOC (or hide the panel if none)
+
+  // Update color swatch selection to match current annotator color
+  syncSwatches(tab.annotator?.color);
   renderToc(tab.outline);
+  updatePageDisplay(tab);
+  attachScrollListener(tab);
 }
 
 function closeTab(tab) {
   const idx = tabs.indexOf(tab);
   if (idx === -1) return;
+  if (_paneScrollCleanup) { _paneScrollCleanup(); _paneScrollCleanup = null; }
   tab.pane.remove();
   tabs.splice(idx, 1);
   if (activeTab === tab) {
@@ -106,6 +111,7 @@ function closeTab(tab) {
     else {
       emptyState.style.display = '';
       renderToc(null);
+      updatePageDisplay(null);
     }
   }
   renderTabBar();
@@ -127,8 +133,6 @@ async function openFile() {
   await tab.viewer.load(tab.pdfBytes);
   tab.annotator = new Annotator(tab.viewer.pages);
   _patchAnnotatorForDirty(tab);
-
-  // Fetch outline — shown in TOC panel
   tab.outline = await tab.viewer.getOutline();
 
   switchTab(tab);
@@ -148,22 +152,19 @@ async function saveTab(tab) {
   }
 }
 
+// Save Copy: writes to a new path but updates the current tab (no new tab opened)
 async function saveTabCopy(tab) {
   if (!tab) return;
   const bytes = await embedAnnotations(tab.pdfBytes, tab.annotator.annotations, tab.viewer);
   const res   = await window.api.saveFileCopy(bytes.buffer);
   if (res.ok) {
-    const newTab = createTab(res.filePath, bytes);
-    await newTab.viewer.load(newTab.pdfBytes);
-    newTab.annotator = new Annotator(newTab.viewer.pages);
-    _patchAnnotatorForDirty(newTab);
-    newTab.outline = await newTab.viewer.getOutline();
-    switchTab(newTab);
+    tab.filePath = res.filePath;
+    tab.pdfBytes = bytes;
+    tab.dirty    = false;
     renderTabBar();
   }
 }
 
-// Monkey-patch Annotator to mark tab dirty whenever an annotation is added/removed
 function _patchAnnotatorForDirty(tab) {
   const orig  = tab.annotator.annotations;
   const proxy = new Proxy(orig, {
@@ -189,10 +190,19 @@ async function zoom(delta) {
 async function fitWidth() {
   if (!activeTab) return;
   const v    = activeTab.viewer;
-  const pane = activeTab.pane;
   const vp   = await v.getViewport(1);
-  const containerW = pane.clientWidth - 32; // 16px padding each side
+  const containerW = activeTab.pane.clientWidth - 32;
   await v.setZoom(containerW / (vp.width / v.scale));
+  activeTab.annotator.pages = v.pages;
+  activeTab.annotator.redrawAll();
+}
+
+async function fitHeight() {
+  if (!activeTab) return;
+  const v    = activeTab.viewer;
+  const vp   = await v.getViewport(activeTab.viewer.getVisiblePageNum());
+  const containerH = activeTab.pane.clientHeight - 32;
+  await v.setZoom(containerH / (vp.height / v.scale));
   activeTab.annotator.pages = v.pages;
   activeTab.annotator.redrawAll();
 }
@@ -203,8 +213,7 @@ async function rotate(singlePage) {
   if (!activeTab) return;
   const v = activeTab.viewer;
   if (singlePage) {
-    const pageNum = v.getVisiblePageNum();
-    await v.rotatePage(pageNum, 90);
+    await v.rotatePage(v.getVisiblePageNum(), 90);
   } else {
     await v.rotateAll(90);
   }
@@ -212,68 +221,115 @@ async function rotate(singlePage) {
   activeTab.annotator.redrawAll();
 }
 
+// ── Page navigation ─────────────────────────────────────────────
+
+function updatePageDisplay(tab) {
+  if (!tab?.viewer) {
+    pageInput.value  = 1;
+    pageTotal.textContent = '/ 1';
+    return;
+  }
+  const count  = tab.viewer.pageCount;
+  const pageNum = tab.viewer.getVisiblePageNum();
+  pageInput.max        = count;
+  pageInput.value      = pageNum;
+  pageTotal.textContent = `/ ${count}`;
+}
+
+function attachScrollListener(tab) {
+  if (_paneScrollCleanup) _paneScrollCleanup();
+  const handler = () => updatePageDisplay(tab);
+  tab.pane.addEventListener('scroll', handler, { passive: true });
+  _paneScrollCleanup = () => tab.pane.removeEventListener('scroll', handler);
+}
+
+function jumpToPage(pageNum) {
+  if (!activeTab) return;
+  const n = Math.max(1, Math.min(activeTab.viewer.pageCount, pageNum));
+  activeTab.viewer.scrollToPage(n);
+  pageInput.value = n;
+}
+
 // ── Table of Contents ──────────────────────────────────────────
 
-// Render the outline tree into the TOC panel for the given tab
 function renderToc(outline) {
   tocTree.innerHTML = '';
-
   if (!outline || outline.length === 0) {
-    // Hide the panel entirely for files without bookmarks
     tocPanel.classList.add('hidden');
     return;
   }
-
   tocPanel.classList.remove('hidden');
-  // Auto-expand when bookmarks are present
   tocPanel.classList.remove('collapsed');
-
   _buildTocNodes(outline, tocTree);
 }
 
 function _buildTocNodes(items, container) {
   for (const item of items) {
+    const hasChildren = item.items && item.items.length > 0;
     const node = document.createElement('div');
 
+    // Build collapsible children container first (needed in closure)
+    let childrenEl = null;
+    if (hasChildren) {
+      childrenEl = document.createElement('div');
+      childrenEl.className = 'toc-children';
+      childrenEl.hidden    = true; // collapsed by default
+      _buildTocNodes(item.items, childrenEl);
+    }
+
     const label = document.createElement('div');
-    label.className  = 'toc-item';
-    label.title      = item.title || '';
+    label.className = 'toc-item';
+
+    const chevron = document.createElement('span');
+    chevron.className   = 'toc-chevron';
+    chevron.textContent = hasChildren ? '\u25B6' : '\u00a0'; // ▶ or nbsp
+    if (hasChildren) {
+      chevron.addEventListener('click', (e) => {
+        e.stopPropagation();
+        childrenEl.hidden   = !childrenEl.hidden;
+        chevron.textContent = childrenEl.hidden ? '\u25B6' : '\u25BC'; // ▶ / ▼
+      });
+    }
+
     const span = document.createElement('span');
     span.className   = 'toc-item-label';
     span.textContent = item.title || '(untitled)';
-    label.appendChild(span);
+
+    label.append(chevron, span);
     label.addEventListener('click', () => _navigateToOutlineItem(item));
     node.appendChild(label);
-
-    if (item.items && item.items.length > 0) {
-      const children = document.createElement('div');
-      children.className = 'toc-children';
-      _buildTocNodes(item.items, children);
-      node.appendChild(children);
-    }
-
+    if (childrenEl) node.appendChild(childrenEl);
     container.appendChild(node);
   }
 }
 
 async function _navigateToOutlineItem(item) {
   if (!activeTab) return;
-  const dest    = item.dest || item.url;
-  const pageNum = await activeTab.viewer.resolveOutlineDest(dest);
-  if (pageNum) activeTab.viewer.scrollToPage(pageNum);
+  const pageNum = await activeTab.viewer.resolveOutlineDest(item.dest || item.url);
+  if (pageNum) {
+    activeTab.viewer.scrollToPage(pageNum);
+    pageInput.value = pageNum;
+  }
 }
 
-// ── TOC toggle ─────────────────────────────────────────────────
-
-tocToggle.addEventListener('click', () => {
-  tocPanel.classList.toggle('collapsed');
-});
+tocToggle.addEventListener('click', () => tocPanel.classList.toggle('collapsed'));
 
 // ── Toolbar ────────────────────────────────────────────────────
 
 function syncToolButtons(tool) {
   document.querySelectorAll('.tool-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tool === tool);
+  });
+}
+
+function syncTextFormatButtons(annotator) {
+  btnBold.classList.toggle('active',      annotator?.textBold      ?? false);
+  btnUnderline.classList.toggle('active', annotator?.textUnderline ?? false);
+}
+
+function syncSwatches(color) {
+  document.querySelectorAll('.swatch').forEach(s => {
+    s.classList.toggle('active', s.dataset.color === color);
   });
 }
 
@@ -285,20 +341,59 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
   });
 });
 
-document.getElementById('btn-open').addEventListener('click', openFile);
-document.getElementById('btn-undo').addEventListener('click', () => activeTab?.annotator?.undo());
-document.getElementById('btn-redo').addEventListener('click', () => activeTab?.annotator?.redo());
-document.getElementById('btn-fit').addEventListener('click', fitWidth);
-document.getElementById('btn-rotate').addEventListener('click', (e) => rotate(e.shiftKey));
-document.getElementById('btn-print').addEventListener('click', () => window.print());
+document.querySelectorAll('.swatch').forEach(s => {
+  s.addEventListener('click', () => {
+    const color = s.dataset.color;
+    if (activeTab?.annotator) activeTab.annotator.setColor(color);
+    syncSwatches(color);
+  });
+});
 
-colorPicker.addEventListener('input', () => {
-  if (activeTab?.annotator) activeTab.annotator.setColor(colorPicker.value);
+document.getElementById('btn-open').addEventListener('click', openFile);
+document.getElementById('btn-undo').addEventListener('click',   () => activeTab?.annotator?.undo());
+document.getElementById('btn-redo').addEventListener('click',   () => activeTab?.annotator?.redo());
+document.getElementById('btn-fit').addEventListener('click',    fitWidth);
+document.getElementById('btn-fit-h').addEventListener('click',  fitHeight);
+document.getElementById('btn-rotate').addEventListener('click', (e) => rotate(e.shiftKey));
+document.getElementById('btn-print').addEventListener('click',  () => window.print());
+
+btnBold.addEventListener('click', () => {
+  if (!activeTab?.annotator) return;
+  const next = !activeTab.annotator.textBold;
+  activeTab.annotator.setTextBold(next);
+  btnBold.classList.toggle('active', next);
+});
+
+btnUnderline.addEventListener('click', () => {
+  if (!activeTab?.annotator) return;
+  const next = !activeTab.annotator.textUnderline;
+  activeTab.annotator.setTextUnderline(next);
+  btnUnderline.classList.toggle('active', next);
 });
 
 thicknessInput.addEventListener('input', () => {
   if (activeTab?.annotator) activeTab.annotator.setThickness(Number(thicknessInput.value));
 });
+
+document.getElementById('btn-prev-page').addEventListener('click', () => {
+  if (!activeTab) return;
+  jumpToPage(activeTab.viewer.getVisiblePageNum() - 1);
+});
+
+document.getElementById('btn-next-page').addEventListener('click', () => {
+  if (!activeTab) return;
+  jumpToPage(activeTab.viewer.getVisiblePageNum() + 1);
+});
+
+pageInput.addEventListener('change', () => jumpToPage(Number(pageInput.value)));
+
+// ── Ctrl+scroll zoom ───────────────────────────────────────────
+
+viewerHost.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  zoom(e.deltaY < 0 ? 0.1 : -0.1);
+}, { passive: false });
 
 // ── Keyboard shortcuts ─────────────────────────────────────────
 
@@ -316,8 +411,8 @@ document.addEventListener('keydown', async (e) => {
   if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); activeTab?.annotator?.redo(); return; }
   if (ctrl && e.key === 'p') { e.preventDefault(); window.print(); return; }
 
-  // Tool shortcuts (only when not typing in an input)
   if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+
   const toolMap = {
     d: 'draw', h: 'highlight', t: 'text', Escape: 'select',
     l: 'line',  r: 'rect', o: 'oval', a: 'arrow', e: 'eraser',

@@ -12,29 +12,68 @@
   <!-- Top bar: toolbar left, tab bar right -->
   <div id="topbar">
     <div id="toolbar">
-      <button id="btn-open"  title="Open PDF (Ctrl+O)">Open</button>
+
+      <!-- File -->
+      <button id="btn-open" title="Open PDF (Ctrl+O)">Open</button>
       <span class="sep"></span>
+
+      <!-- Basic annotation tools -->
       <button id="tool-select"    class="tool-btn active" title="Select / Pan (Esc)"  data-tool="select">&#x2B1C;</button>
       <button id="tool-draw"      class="tool-btn" title="Draw (D)"          data-tool="draw">&#x270F;</button>
       <button id="tool-highlight" class="tool-btn" title="Highlight (H)"     data-tool="highlight">&#x25A0;</button>
       <button id="tool-text"      class="tool-btn" title="Text box (T)"      data-tool="text">A</button>
       <span class="sep"></span>
+
+      <!-- Shape tools -->
       <button id="tool-line"      class="tool-btn" title="Line (L)"          data-tool="line">&#x2571;</button>
       <button id="tool-rect"      class="tool-btn" title="Rectangle (R)"     data-tool="rect">&#x25AD;</button>
       <button id="tool-oval"      class="tool-btn" title="Oval (O)"          data-tool="oval">&#x25EF;</button>
       <button id="tool-arrow"     class="tool-btn" title="Arrow (A)"         data-tool="arrow">&#x2192;</button>
       <span class="sep"></span>
+
+      <!-- Eraser -->
       <button id="tool-eraser"    class="tool-btn" title="Eraser (E)"        data-tool="eraser">&#x232B;</button>
       <span class="sep"></span>
+
+      <!-- Undo / Redo -->
       <button id="btn-undo"   title="Undo (Ctrl+Z)">&#x21A9;</button>
       <button id="btn-redo"   title="Redo (Ctrl+Y)">&#x21AA;</button>
       <span class="sep"></span>
+
+      <!-- View controls -->
       <button id="btn-fit"    title="Fit Width (Ctrl+0)">&#x21D4;</button>
+      <button id="btn-fit-h"  title="Fit Height">&#x21D5;</button>
       <button id="btn-rotate" title="Rotate 90° CW — Shift+click for current page only">&#x21BB;</button>
       <button id="btn-print"  title="Print (Ctrl+P)">&#x2399;</button>
       <span class="sep"></span>
-      <input  id="color-picker" type="color" value="#f5c518" title="Colour" />
-      <input  id="thickness"    type="range" min="1" max="20" value="3" title="Thickness" />
+
+      <!-- Text formatting (for text box tool) -->
+      <button id="btn-bold"      title="Bold text">B</button>
+      <button id="btn-underline" title="Underline text">U</button>
+      <span class="sep"></span>
+
+      <!-- Colour swatches -->
+      <div id="color-swatches">
+        <button class="swatch active" data-color="#f5c518" style="background:#f5c518" title="Yellow"></button>
+        <button class="swatch"        data-color="#ff8c00" style="background:#ff8c00" title="Orange"></button>
+        <button class="swatch"        data-color="#ff3333" style="background:#ff3333" title="Red"></button>
+        <button class="swatch"        data-color="#cc44ff" style="background:#cc44ff" title="Purple"></button>
+        <button class="swatch"        data-color="#3388ff" style="background:#3388ff" title="Blue"></button>
+        <button class="swatch"        data-color="#00cc88" style="background:#00cc88" title="Green"></button>
+        <button class="swatch"        data-color="#111111" style="background:#111111" title="Black"></button>
+        <button class="swatch"        data-color="#ffffff" style="background:#ffffff" title="White"></button>
+      </div>
+
+      <!-- Thickness -->
+      <input id="thickness" type="range" min="1" max="20" value="3" title="Thickness" />
+      <span class="sep"></span>
+
+      <!-- Page navigation -->
+      <button id="btn-prev-page" title="Previous page">&#x2039;</button>
+      <input  id="page-input" type="number" min="1" value="1" title="Jump to page" />
+      <span   id="page-total">/ 1</span>
+      <button id="btn-next-page" title="Next page">&#x203A;</button>
+
     </div>
     <div id="tab-bar"></div>
   </div>
@@ -42,7 +81,7 @@
   <!-- Content area below topbar: TOC sidebar + viewer host -->
   <div id="content-area">
 
-    <!-- Table of contents sidebar (hidden when PDF has no outline) -->
+    <!-- Table of contents sidebar (hidden for PDFs without bookmarks) -->
     <div id="toc-panel" class="collapsed hidden">
       <div id="toc-header">
         <button id="toc-toggle" title="Toggle contents">&#x2630;</button>

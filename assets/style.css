@@ -81,8 +81,64 @@ html, body {
 }
 
 #thickness {
-  width: 70px;
+  width: 60px;
   accent-color: var(--accent);
+}
+
+/* Bold / underline toggle buttons */
+#btn-bold      { font-weight: bold; min-width: 26px; }
+#btn-underline { text-decoration: underline; min-width: 26px; }
+#btn-bold.active, #btn-underline.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* Colour swatches */
+#color-swatches {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.swatch:hover  { border-color: #aaa; }
+.swatch.active { border-color: #fff; box-shadow: 0 0 0 1px #888; }
+
+/* Page navigation */
+#btn-prev-page, #btn-next-page {
+  font-size: 16px;
+  padding: 2px 5px;
+}
+
+#page-input {
+  width: 42px;
+  background: var(--tab-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 12px;
+  text-align: center;
+  padding: 1px 3px;
+  /* hide browser spin buttons */
+  -moz-appearance: textfield;
+}
+#page-input::-webkit-outer-spin-button,
+#page-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+#page-total {
+  font-size: 12px;
+  white-space: nowrap;
+  color: #999;
 }
 
 /* ── Tab bar ─────────────────────────────────────────────── */
@@ -204,6 +260,16 @@ html, body {
 }
 #toc-tree::-webkit-scrollbar { width: 4px; }
 #toc-tree::-webkit-scrollbar-thumb { background: var(--border); }
+
+.toc-chevron {
+  display: inline-block;
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 9px;
+  color: #888;
+  cursor: pointer;
+  user-select: none;
+}
 
 .toc-item {
   display: flex;
