@@ -9,6 +9,8 @@ const fs   = require('fs');
 
 // ── Window factory ─────────────────────────────────────────────
 
+const isMac = process.platform === 'darwin';
+
 function createWindow(openFilePath) {
   const win = new BrowserWindow({
     width: 1280,
@@ -18,7 +20,11 @@ function createWindow(openFilePath) {
     title: 'PDFox',
     icon: path.join(__dirname, 'assets', 'pdfox_logo.png'),
     backgroundColor: '#1e1e1e',
-    frame: false,
+    // Mac: use native traffic lights with hidden titlebar; Windows: fully custom frame
+    ...(isMac
+      ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 13 } }
+      : { frame: false }
+    ),
     autoHideMenuBar: true, // hide native menu bar; accelerators still work
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -192,6 +198,30 @@ ipcMain.on('start-drag', (event, filePath) => {
 
 // ── App lifecycle ──────────────────────────────────────────────
 
+// On macOS, file-open requests arrive via this event (not argv).
+// It can fire before app is ready, so queue the path if needed.
+let _pendingOpenFile = null;
+
+app.on('open-file', (e, filePath) => {
+  e.preventDefault();
+  if (!app.isReady()) {
+    _pendingOpenFile = filePath;
+    return;
+  }
+  const wins = BrowserWindow.getAllWindows();
+  if (wins.length > 0) {
+    const win = wins[0];
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    try {
+      const buffer = fs.readFileSync(filePath);
+      win.webContents.send('open-file-data', { filePath, buffer: buffer.buffer });
+    } catch { /* ignore */ }
+  } else {
+    createWindow(filePath);
+  }
+});
+
 // Extract a .pdf path from an argv array (skips flags and the executable itself)
 function getArgvFile(argv) {
   for (let i = 1; i < argv.length; i++) {
@@ -227,11 +257,18 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
-    createWindow(getArgvFile(process.argv));
+    createWindow(_pendingOpenFile || getArgvFile(process.argv));
+    _pendingOpenFile = null;
     buildMenu();
   });
 
+  // Mac: keep the app running when the last window is closed (dock icon stays)
   app.on('window-all-closed', () => {
-    app.quit();
+    if (!isMac) app.quit();
+  });
+
+  // Mac: re-open a window when the dock icon is clicked with none open
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(null);
   });
 }

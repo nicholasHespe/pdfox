@@ -909,6 +909,12 @@ html, body {
   html { overflow: visible; }
 }
 
+/* ── macOS platform adjustments ───────────────────────────────── */
+/* Hide custom win-controls — native traffic lights are used instead */
+.platform-mac #win-controls { display: none; }
+/* Indent the File/View menus to clear the traffic light buttons (~70px) */
+.platform-mac #titlebar-section { margin-left: 70px; }
+
 /* ── Find bar ──────────────────────────────────────────────────── */
 #find-bar {
   position: absolute;

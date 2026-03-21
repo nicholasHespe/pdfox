@@ -65,6 +65,17 @@ const colorDot       = document.getElementById('color-dot');
 const colorPanel     = document.getElementById('color-panel');
 const titleFilename  = document.getElementById('title-filename');
 
+// ── Platform setup ─────────────────────────────────────────────
+
+const isMac = window.api.platform === 'darwin';
+if (isMac) {
+  document.body.classList.add('platform-mac');
+  // Replace "Ctrl+" with "⌘" in the File/View dropdown shortcut labels
+  document.querySelectorAll('.titlebar-dropdown span').forEach(span => {
+    span.textContent = span.textContent.replace('Ctrl+', '⌘');
+  });
+}
+
 // ── Find bar ───────────────────────────────────────────────────
 
 const finder = new FindBar({

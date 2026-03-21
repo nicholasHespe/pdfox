@@ -4,9 +4,10 @@
   "description": "Lightweight standalone PDF viewer for Windows",
   "main": "main.js",
   "scripts": {
-    "start": "set ELECTRON_RUN_AS_NODE=&& electron .",
+    "start": "electron .",
     "dist": "electron-builder --win portable",
-    "build-win": "electron-builder --win nsis portable --x64"
+    "build-win": "electron-builder --win nsis portable --x64",
+    "build-mac": "electron-builder --mac dmg --universal"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
@@ -33,6 +34,13 @@
       "target": [
         { "target": "nsis",     "arch": ["x64"] },
         { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "mac": {
+      "icon": "assets/pdfox_logo.icns",
+      "category": "public.app-category.productivity",
+      "target": [
+        { "target": "dmg", "arch": ["universal"] }
       ]
     },
     "nsis": {

@@ -3,7 +3,7 @@
 
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   // File open dialog → [{ filePath, buffer }] or null
@@ -46,6 +46,21 @@ contextBridge.exposeInMainWorld('api', {
 
   // Initiate a native OS file drag (for dragging into Outlook, Explorer, etc.)
   startDrag: (filePath) => ipcRenderer.send('start-drag', filePath),
+
+  // Scale the entire UI (webFrame zoom, 1.0 = 100%)
+  setUiZoom: (factor) => webFrame.setZoomFactor(factor),
+  getUiZoom: () => webFrame.getZoomFactor(),
+
+  // Custom window controls (used because frame: false removes native chrome)
+  minimizeWindow:  () => ipcRenderer.invoke('minimize-window'),
+  toggleMaximize:  () => ipcRenderer.invoke('toggle-maximize'),
+  closeWindow:     () => ipcRenderer.invoke('close-window'),
+
+  // Current platform — lets the renderer apply Mac-specific UI adjustments
+  platform: process.platform,
+
+  // Toggle DevTools for the current window
+  openDevTools: () => ipcRenderer.send('open-devtools'),
 
   // Bring this window to the front (used when an external tab drag hovers over it)
   focusWindow: () => ipcRenderer.invoke('focus-window'),

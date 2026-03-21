@@ -1,16 +1,24 @@
 # PDFox
-A lightweight, standalone PDF viewer for Windows focused on speed and productivity. No bloat, no cloud, no accounts. Does one thing well.
+A lightweight, standalone PDF viewer for Windows and macOS focused on speed and productivity. No bloat, no cloud, no accounts. Does one thing well.
 
 ---
 
 ## Download
 
+### Windows
 | | |
 |---|---|
 | **Installer** (recommended) | [PDFox Setup — latest release](https://github.com/nicholasHespe/pdfox/releases/latest) |
 | **Portable** (no install needed) | [PDFox portable — latest release](https://github.com/nicholasHespe/pdfox/releases/latest) |
 
-> Windows 10/11 x64 only. No runtime or dependencies required.
+> Windows 10/11 x64. No runtime or dependencies required.
+
+### macOS
+| | |
+|---|---|
+| **DMG** (Intel + Apple Silicon) | [PDFox — latest release](https://github.com/nicholasHespe/pdfox/releases/latest) |
+
+> macOS universal binary — runs natively on both Intel and Apple Silicon.
 
 ---
 
@@ -18,16 +26,16 @@ A lightweight, standalone PDF viewer for Windows focused on speed and productivi
 
 - **Multi-tab** — open multiple PDFs in one window; drag tabs to reorder or drag them into a separate window
 - **Annotations** — draw, highlight, place text, and add shapes (line, rectangle, oval, arrow); undo/redo support
-- **Find** — Ctrl+F search across the current document or all open tabs, with exact, wildcard (`*` `?`), and fuzzy match modes
+- **Find** — Ctrl+F / ⌘F search across the current document or all open tabs, with exact, wildcard (`*` `?`), and fuzzy match modes
 - **Combine PDFs** — merge any open documents into a new tab in any order
 - **Reorder pages** — drag page thumbnails or use arrow buttons to rearrange pages before saving
 - **Table of contents** — collapsible bookmark panel for documents that have an outline
 - **Form fields** — fill in interactive PDF form fields
-- **Zoom & fit** — fit to width, per-page zoom, smooth Ctrl+scroll
+- **Zoom & fit** — fit to width, per-page zoom, smooth Ctrl+scroll / ⌘+scroll
 - **Rotation** — rotate all pages or individual pages; persisted per session
 - **Save / Save As** — saves annotations directly into the PDF file so they open in any viewer
 - **Memory-efficient** — inactive tabs are put to sleep automatically and wake on demand
-- **Set as default** — install once, right-click any PDF and choose *Open with PDFox*, set as default and forget
+- **Set as default** — install once, set PDFox as your default PDF viewer and forget
 
 ---
 
@@ -37,28 +45,28 @@ A lightweight, standalone PDF viewer for Windows focused on speed and productivi
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+O` | Open file(s) |
-| `Ctrl+S` | Save |
-| `Ctrl+Shift+S` | Save copy (Save As) |
-| `Ctrl+W` | Close tab |
-| `Ctrl+Shift+T` | Reopen last closed tab |
-| `Ctrl+P` | Print |
+| `Ctrl+O` / `⌘O` | Open file(s) |
+| `Ctrl+S` / `⌘S` | Save |
+| `Ctrl+Shift+S` / `⌘⇧S` | Save copy (Save As) |
+| `Ctrl+W` / `⌘W` | Close tab |
+| `Ctrl+Shift+T` / `⌘⇧T` | Reopen last closed tab |
+| `Ctrl+P` / `⌘P` | Print |
 
 ### View
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+=` / `Ctrl++` | Zoom in |
-| `Ctrl+-` | Zoom out |
-| `Ctrl+0` | Fit to width |
-| `Ctrl+Scroll` | Zoom in / out |
-| `Ctrl+R` | Refresh render |
+| `Ctrl+=` / `⌘=` | Zoom in |
+| `Ctrl+-` / `⌘-` | Zoom out |
+| `Ctrl+0` / `⌘0` | Fit to width |
+| `Ctrl+Scroll` / `⌘Scroll` | Zoom in / out |
+| `Ctrl+R` / `⌘R` | Refresh render |
 
 ### Find
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+F` | Open find bar |
+| `Ctrl+F` / `⌘F` | Open find bar |
 | `Enter` | Next match |
 | `Shift+Enter` | Previous match |
 | `Escape` | Close find bar |
@@ -76,8 +84,8 @@ A lightweight, standalone PDF viewer for Windows focused on speed and productivi
 | `O` | Oval |
 | `A` | Arrow |
 | `E` | Eraser |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
+| `Ctrl+Z` / `⌘Z` | Undo |
+| `Ctrl+Y` / `⌘⇧Z` | Redo |
 
 ---
 
@@ -85,11 +93,12 @@ A lightweight, standalone PDF viewer for Windows focused on speed and productivi
 
 ```
 npm install
-npm start          # run in development
-npm run build-win  # build installer + portable exe → dist/
+npm start           # run in development
+npm run build-win   # Windows: NSIS installer + portable exe → dist/
+npm run build-mac   # macOS:   universal DMG → dist/
 ```
 
-Requires Node.js 18+ and npm.
+Requires Node.js 18+ and npm. Mac builds must be run on macOS.
 
 ---
 
