@@ -351,26 +351,34 @@ function renderTabBar() {
 
 // ── Cross-window drag: tab bar as drop target ──────────────────
 
+// Bring this window to front as soon as an external tab drag enters anywhere in the window.
+// dragenter fires on entry; _dragOverFocused guards against repeat calls.
+document.addEventListener('dragenter', (e) => {
+  if (e.dataTransfer.types.includes('pdfox-tab-filepath') && !_dragOverFocused) {
+    _dragOverFocused = true;
+    window.api.focusWindow();
+  }
+});
+// relatedTarget is null when the drag leaves the browser window entirely — reset the flag.
+document.addEventListener('dragleave', (e) => {
+  if (!e.relatedTarget) _dragOverFocused = false;
+});
+
 tabBar.addEventListener('dragover', (e) => {
   if (e.dataTransfer.types.includes('pdfox-tab-filepath')) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     tabBar.classList.add('drag-over-external');
-    // Bring this window to front the first time the drag enters
-    if (!_dragOverFocused) {
-      _dragOverFocused = true;
-      window.api.focusWindow();
-    }
   }
 });
 tabBar.addEventListener('dragleave', (e) => {
   if (!tabBar.contains(e.relatedTarget)) {
     tabBar.classList.remove('drag-over-external');
-    _dragOverFocused = false;
   }
 });
 tabBar.addEventListener('drop', async (e) => {
   tabBar.classList.remove('drag-over-external');
+  _dragOverFocused = false; // reset so the next drag to this window also focuses it
   const filepath = e.dataTransfer.getData('pdfox-tab-filepath');
   const sourceId = Number(e.dataTransfer.getData('pdfox-tab-source-id'));
   const isDirty  = e.dataTransfer.getData('pdfox-tab-dirty') === '1';
