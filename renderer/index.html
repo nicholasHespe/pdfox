@@ -7,11 +7,71 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self' file:; script-src 'self' 'unsafe-eval' file:; style-src 'self' 'unsafe-inline'; worker-src blob: file:; img-src 'self' data: file:;" />
   <title>PDFox</title>
+  <link rel="icon" type="image/png" href="../assets/pdfox_logo.png" />
   <link rel="stylesheet" href="../assets/style.css" />
 </head>
 <body>
-  <!-- ── Top toolbar: 3 flex sections ──────────────────────────── -->
+  <!-- ── Top toolbar: title row + tools row ────────────────────── -->
   <div id="topbar">
+
+    <!-- Row 1: title bar (draggable, File/View left, path center, window controls right) -->
+    <div id="titlebar-row">
+
+      <div id="titlebar-section">
+        <div class="titlebar-menu">
+          <button class="titlebar-menu-btn">File</button>
+          <div class="titlebar-dropdown hidden">
+            <button data-menu="open">Open… <span>Ctrl+O</span></button>
+            <button data-menu="save">Save <span>Ctrl+S</span></button>
+            <button data-menu="save-copy">Save Copy… <span>Ctrl+⇧+S</span></button>
+            <div class="tdrop-sep"></div>
+            <button data-menu="close-tab">Close Tab <span>Ctrl+W</span></button>
+            <button data-menu="reopen-tab">Reopen Tab <span>Ctrl+⇧+T</span></button>
+            <div class="tdrop-sep"></div>
+            <button data-menu="quit">Quit</button>
+          </div>
+        </div>
+
+        <div class="titlebar-menu">
+          <button class="titlebar-menu-btn">View</button>
+          <div class="titlebar-dropdown hidden">
+            <div class="tdrop-submenu">
+              <button class="tdrop-submenu-item">UI Scaling <span>&#x276F;</span></button>
+              <div class="tdrop-submenu-panel">
+                <button data-menu="zoom-50">50%</button>
+                <button data-menu="zoom-75">75%</button>
+                <button data-menu="zoom-100">100%</button>
+                <button data-menu="zoom-125">125%</button>
+                <button data-menu="zoom-150">150%</button>
+                <button data-menu="zoom-200">200%</button>
+              </div>
+            </div>
+            <div class="tdrop-sep"></div>
+            <button data-menu="fit-width">Fit Width</button>
+            <button data-menu="fit-height">Fit Height</button>
+            <div class="tdrop-sep"></div>
+            <button data-menu="devtools">Developer Tools</button>
+            <button data-menu="app-reload">Reload App</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Centred file path; truncates from the beginning when too long -->
+      <div id="title-path-wrap">
+        <span id="title-filename">PDFox</span>
+      </div>
+
+      <!-- Custom window controls (frame: false — no native chrome) -->
+      <div id="win-controls">
+        <button id="btn-win-min"   title="Minimise">&#x2014;</button>
+        <button id="btn-win-max"   title="Maximise / Restore">&#x2610;</button>
+        <button id="btn-win-close" title="Close">&#x2715;</button>
+      </div>
+
+    </div>
+
+    <!-- Row 2: annotation + navigation tools -->
+    <div id="tools-row">
 
     <!-- LEFT: annotation tools, right-aligned toward center -->
     <div id="tools-left">
@@ -105,13 +165,29 @@
           <span id="color-dot"></span>
         </button>
         <div id="color-panel" class="hidden">
-          <button class="swatch" data-color="#f5c518" style="background:#f5c518" title="Yellow"></button>
-          <button class="swatch" data-color="#ff8c00" style="background:#ff8c00" title="Orange"></button>
+          <!-- Row 1: Reds / warm -->
           <button class="swatch" data-color="#ff3333" style="background:#ff3333" title="Red"></button>
-          <button class="swatch" data-color="#cc44ff" style="background:#cc44ff" title="Purple"></button>
+          <button class="swatch" data-color="#ff6644" style="background:#ff6644" title="Coral"></button>
+          <button class="swatch" data-color="#ff8c00" style="background:#ff8c00" title="Orange"></button>
+          <button class="swatch" data-color="#ffb300" style="background:#ffb300" title="Amber"></button>
+          <button class="swatch" data-color="#f5c518" style="background:#f5c518" title="Yellow"></button>
+          <!-- Row 2: Greens -->
+          <button class="swatch" data-color="#aacc00" style="background:#aacc00" title="Lime"></button>
+          <button class="swatch" data-color="#33bb55" style="background:#33bb55" title="Green"></button>
+          <button class="swatch" data-color="#00cc88" style="background:#00cc88" title="Teal"></button>
+          <button class="swatch" data-color="#00bbbb" style="background:#00bbbb" title="Cyan"></button>
+          <button class="swatch" data-color="#0099cc" style="background:#0099cc" title="Sky"></button>
+          <!-- Row 3: Blues / purples -->
           <button class="swatch" data-color="#3388ff" style="background:#3388ff" title="Blue"></button>
-          <button class="swatch" data-color="#00cc88" style="background:#00cc88" title="Green"></button>
+          <button class="swatch" data-color="#0055cc" style="background:#0055cc" title="Dark Blue"></button>
+          <button class="swatch" data-color="#6644cc" style="background:#6644cc" title="Indigo"></button>
+          <button class="swatch" data-color="#cc44ff" style="background:#cc44ff" title="Purple"></button>
+          <button class="swatch" data-color="#ff44aa" style="background:#ff44aa" title="Pink"></button>
+          <!-- Row 4: Neutrals -->
+          <button class="swatch" data-color="#884400" style="background:#884400" title="Brown"></button>
           <button class="swatch" data-color="#111111" style="background:#111111" title="Black"></button>
+          <button class="swatch" data-color="#555555" style="background:#555555" title="Dark Gray"></button>
+          <button class="swatch" data-color="#aaaaaa" style="background:#aaaaaa" title="Gray"></button>
           <button class="swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
         </div>
       </div>
@@ -119,7 +195,9 @@
       <input id="thickness" type="range" min="1" max="20" value="3" title="Thickness" />
     </div>
 
-  </div>
+    </div><!-- /#tools-row -->
+
+  </div><!-- /#topbar -->
 
   <!-- ── Content area: sidebars overlay the viewer ─────────────── -->
   <div id="content-area">
@@ -191,6 +269,26 @@
         <span id="toc-title">Contents</span>
       </div>
       <div id="toc-tree"></div>
+    </div>
+
+    <!-- ── Find bar (Ctrl+F) ──────────────────────────────────── -->
+    <div id="find-bar" class="hidden">
+      <div id="find-bar-inner">
+        <input id="find-input" type="text" placeholder="Find…" autocomplete="off" spellcheck="false" />
+        <span id="find-counter"></span>
+        <button id="find-prev" title="Previous (Shift+Enter)">&#x2303;</button>
+        <button id="find-next" title="Next (Enter)">&#x2304;</button>
+        <div class="find-toggle-group">
+          <button class="find-toggle active" data-scope="current" title="Current document">Doc</button>
+          <button class="find-toggle"        data-scope="all"     title="All open documents">All</button>
+        </div>
+        <div class="find-toggle-group">
+          <button class="find-toggle" data-mode="wildcard" title="Wildcard: * = any chars, ? = one char">*?</button>
+          <button class="find-toggle" data-mode="fuzzy"    title="Fuzzy: approximate match">~</button>
+        </div>
+        <button id="find-close" title="Close (Esc)">&#x2715;</button>
+      </div>
+      <div id="find-dropdown" class="hidden"></div>
     </div>
 
   </div>

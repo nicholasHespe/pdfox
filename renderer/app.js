@@ -5,6 +5,7 @@ import { PDFViewer }        from './viewer.js';
 import { Annotator }        from './annotator.js';
 import { embedAnnotations } from './saver.js';
 import { PDFDocument }      from '../node_modules/pdf-lib/dist/pdf-lib.esm.js';
+import { FindBar }          from './find.js';
 
 // ── State ──────────────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ const emptyState     = document.getElementById('empty-state');
 const thicknessInput = document.getElementById('thickness');
 const tocPanel       = document.getElementById('toc-panel');
 const tocTree        = document.getElementById('toc-tree');
+const contentArea    = document.getElementById('content-area');
 const pageInput      = document.getElementById('page-input');
 const pageTotal      = document.getElementById('page-total');
 const btnBold        = document.getElementById('btn-bold');
@@ -61,6 +63,25 @@ const fontSizeInput  = document.getElementById('font-size-input');
 const colorBtn       = document.getElementById('color-btn');
 const colorDot       = document.getElementById('color-dot');
 const colorPanel     = document.getElementById('color-panel');
+const titleFilename  = document.getElementById('title-filename');
+
+// ── Find bar ───────────────────────────────────────────────────
+
+const finder = new FindBar({
+  getTabs:      () => tabs,
+  getActiveTab: () => activeTab,
+  switchTab,
+});
+
+// ── Custom window controls ──────────────────────────────────────
+
+document.getElementById('btn-win-min').addEventListener('click',   () => window.api.minimizeWindow());
+document.getElementById('btn-win-max').addEventListener('click',   () => window.api.toggleMaximize());
+document.getElementById('btn-win-close').addEventListener('click', () => window.api.closeWindow());
+
+function updateTitleBar(tab) {
+  titleFilename.textContent = tab?.filePath ?? 'PDFox';
+}
 
 // ── Window ID ──────────────────────────────────────────────────
 
@@ -425,6 +446,7 @@ function switchTab(tab) {
   tab.pane.classList.add('active');
   tab.lastActive = Date.now();
   emptyState.style.display = 'none';
+  updateTitleBar(tab);
   renderTabBar();
 
   if (tab.sleeping) {
@@ -444,6 +466,7 @@ function switchTab(tab) {
   updatePageDisplay(tab);
   attachScrollListener(tab);
   _positionScrollbar();
+  finder.onTabSwitch();
 }
 
 function closeTab(tab) {
@@ -454,6 +477,7 @@ function closeTab(tab) {
     _closedTabStack.push({ filePath: tab.filePath });
     if (_closedTabStack.length > 20) _closedTabStack.shift();
   }
+  finder.invalidateTab(tab);
   tab.annotator?.destroy();
   if (_paneScrollCleanup) { _paneScrollCleanup(); _paneScrollCleanup = null; }
   tab.pane.remove();
@@ -466,6 +490,7 @@ function closeTab(tab) {
       emptyState.style.display = '';
       renderToc(null);
       updatePageDisplay(null);
+      updateTitleBar(null);
     }
   }
   renderTabBar();
@@ -711,6 +736,7 @@ async function _applyZoomNow(scale) {
   activeTab.annotator.pages = v.pages;
   activeTab.annotator.redrawAll();
   _syncScrollbar();
+  finder.onZoom();
 }
 
 async function fitWidth() {
@@ -772,10 +798,12 @@ function renderToc(outline) {
   tocTree.innerHTML = '';
   if (!outline || outline.length === 0) {
     tocPanel.classList.add('hidden');
+    contentArea.classList.remove('toc-open');
     _positionScrollbar();
     return;
   }
   tocPanel.classList.remove('hidden');
+  contentArea.classList.add('toc-open');
   _buildTocNodes(outline, tocTree);
   _positionScrollbar();
 }
@@ -929,6 +957,9 @@ document.addEventListener('keydown', async (e) => {
   if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); activeTab?.annotator?.redo(); return; }
   if (ctrl && e.key === 'p') { e.preventDefault(); window.print(); return; }
   if (ctrl && e.key === 'r') { e.preventDefault(); if (activeTab) _applyZoomNow(activeTab.viewer.scale); return; }
+  if (ctrl && e.key === 'f') { e.preventDefault(); finder.open(); return; }
+
+  if (e.key === 'Escape' && finder.isOpen()) { e.preventDefault(); finder.close(); return; }
 
   if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
 
@@ -943,15 +974,69 @@ document.addEventListener('keydown', async (e) => {
   }
 });
 
-// ── Menu events from main process ─────────────────────────────
+// ── Custom title bar menus ─────────────────────────────────────
+
+const _menuActions = {
+  'open':        () => openFile(),
+  'save':        () => saveTab(activeTab),
+  'save-copy':   () => saveTabCopy(activeTab),
+  'close-tab':   () => { if (activeTab) requestCloseTab(activeTab); },
+  'reopen-tab':  () => reopenLastTab(),
+  'quit':        () => window.close(),
+  'zoom-50':     () => window.api.setUiZoom(0.5),
+  'zoom-75':     () => window.api.setUiZoom(0.75),
+  'zoom-100':    () => window.api.setUiZoom(1.0),
+  'zoom-125':    () => window.api.setUiZoom(1.25),
+  'zoom-150':    () => window.api.setUiZoom(1.5),
+  'zoom-200':    () => window.api.setUiZoom(2.0),
+  'fit-width':   () => fitWidth(),
+  'fit-height':  () => fitHeight(),
+  'devtools':    () => window.api.openDevTools(),
+  'app-reload':  () => location.reload(),
+};
+
+function _closeAllDropdowns() {
+  document.querySelectorAll('.titlebar-dropdown').forEach(d => d.classList.add('hidden'));
+  document.querySelectorAll('.titlebar-menu-btn').forEach(b => b.classList.remove('open'));
+}
+
+// Toggle dropdown on menu button click
+document.querySelectorAll('.titlebar-menu').forEach(menu => {
+  const btn      = menu.querySelector('.titlebar-menu-btn');
+  const dropdown = menu.querySelector('.titlebar-dropdown');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = !dropdown.classList.contains('hidden');
+    _closeAllDropdowns();
+    if (!isOpen) { dropdown.classList.remove('hidden'); btn.classList.add('open'); }
+  });
+});
+
+// Close when clicking outside any menu
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('.titlebar-menu')) _closeAllDropdowns();
+});
+
+// Use mousedown on dropdowns so the action fires before any close-on-click logic
+document.querySelectorAll('.titlebar-dropdown').forEach(dropdown => {
+  dropdown.addEventListener('mousedown', (e) => {
+    const btn = e.target.closest('[data-menu]');
+    if (!btn) return;
+    e.stopPropagation();
+    _closeAllDropdowns();
+    _menuActions[btn.dataset.menu]?.();
+  });
+});
+
+// ── Menu events from main process (keyboard accelerators) ──────
 
 window.api.onMenuEvent((event) => {
   switch (event) {
     case 'menu-open':       openFile(); break;
     case 'menu-save':       saveTab(activeTab); break;
     case 'menu-save-copy':  saveTabCopy(activeTab); break;
-    case 'menu-close-tab':   if (activeTab) requestCloseTab(activeTab); break;
-    case 'menu-reopen-tab':  reopenLastTab(); break;
+    case 'menu-close-tab':  if (activeTab) requestCloseTab(activeTab); break;
+    case 'menu-reopen-tab': reopenLastTab(); break;
   }
 });
 
@@ -1037,28 +1122,71 @@ document.getElementById('reorder-ok').addEventListener('click', _executeReorder)
 
 async function _openReorderModal() {
   if (!activeTab) return;
-  const tab     = activeTab;
-  const count   = tab.viewer.pageCount;
+  const tab       = activeTab;
+  const count     = tab.viewer.pageCount;
   const container = document.getElementById('reorder-pages');
 
   container.innerHTML = '<p style="color:#888;font-size:13px;padding:8px">Loading thumbnails…</p>';
   document.getElementById('reorder-modal').classList.remove('hidden');
 
+  // Move thumb one position left (-1) or right (+1), refreshing page labels.
+  function moveThumb(th, dir) {
+    const siblings = [...container.children];
+    const idx = siblings.indexOf(th);
+    if (dir === -1 && idx === 0) return;
+    if (dir ===  1 && idx === siblings.length - 1) return;
+    dir === -1
+      ? container.insertBefore(th, siblings[idx - 1])
+      : siblings[idx + 1].insertAdjacentElement('afterend', th);
+    container.querySelectorAll('.reorder-page-num').forEach((s, i) => {
+      s.textContent = `Page ${i + 1}`;
+    });
+    th.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function selectThumb(th) {
+    container.querySelectorAll('.reorder-thumb').forEach(t => t.classList.remove('selected'));
+    th.classList.add('selected');
+  }
+
   container.innerHTML = '';
   for (let i = 0; i < count; i++) {
     const dataUrl = await tab.viewer.renderThumbnail(i + 1);
     const thumb   = document.createElement('div');
-    thumb.className  = 'reorder-thumb';
-    thumb.draggable  = true;
+    thumb.className    = 'reorder-thumb';
+    thumb.draggable    = true;
     thumb.dataset.orig = i;
 
     const img = document.createElement('img');
     img.src   = dataUrl;
     img.alt   = `Page ${i + 1}`;
+
     const num = document.createElement('span');
     num.className   = 'reorder-page-num';
     num.textContent = `Page ${i + 1}`;
-    thumb.append(img, num);
+
+    const controls = document.createElement('div');
+    controls.className = 'reorder-controls';
+    const btnL = document.createElement('button');
+    btnL.className = 'reorder-arrow';
+    btnL.title     = 'Move left';
+    btnL.innerHTML = '&#8592;';
+    const btnR = document.createElement('button');
+    btnR.className = 'reorder-arrow';
+    btnR.title     = 'Move right';
+    btnR.innerHTML = '&#8594;';
+    controls.append(btnL, btnR);
+
+    thumb.append(img, num, controls);
+
+    // Click to select (arrows handled separately)
+    thumb.addEventListener('click', (e) => {
+      if (e.target.closest('.reorder-arrow')) return;
+      selectThumb(thumb);
+    });
+
+    btnL.addEventListener('click', (e) => { e.stopPropagation(); selectThumb(thumb); moveThumb(thumb, -1); });
+    btnR.addEventListener('click', (e) => { e.stopPropagation(); selectThumb(thumb); moveThumb(thumb,  1); });
 
     thumb.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('reorder-orig', String(thumb.dataset.orig));
@@ -1117,6 +1245,7 @@ async function _executeReorder() {
   reloadEl.innerHTML = '<div class="spinner"></div>';
   tab.pane.appendChild(reloadEl);
   tab.loadingEl = reloadEl;
+  finder.invalidateTab(tab);
   await _loadTabContent(tab);
   markDirty(tab);
 }
@@ -1163,8 +1292,8 @@ document.getElementById('close-save').addEventListener('click', async () => {
 
 // ── Init ───────────────────────────────────────────────────────
 
-// Sync colour dot to initial active swatch
-const initSwatch = document.querySelector('.swatch[data-color="#f5c518"]');
-if (initSwatch) colorDot.style.background = initSwatch.dataset.color;
+// Sync colour dot to initial active swatch (default: red)
+const initSwatch = document.querySelector('.swatch[data-color="#ff3333"]');
+if (initSwatch) { colorDot.style.background = initSwatch.dataset.color; initSwatch.classList.add('active'); }
 
 emptyState.style.display = '';
