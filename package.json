@@ -4,7 +4,7 @@
   "description": "Lightweight standalone PDF viewer for Windows",
   "main": "main.js",
   "scripts": {
-    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "start": "set ELECTRON_RUN_AS_NODE=&& electron .",
     "dist": "electron-builder --win portable"
   },
   "dependencies": {
