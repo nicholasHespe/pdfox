@@ -16,7 +16,10 @@ function createWindow(openFilePath) {
     minWidth: 640,
     minHeight: 480,
     title: 'PDFox',
+    icon: path.join(__dirname, 'assets', 'pdfox_logo.png'),
     backgroundColor: '#1e1e1e',
+    frame: false,
+    autoHideMenuBar: true, // hide native menu bar; accelerators still work
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -79,9 +82,7 @@ function buildMenu() {
 let _dragIcon = null;
 function getDragIcon() {
   if (_dragIcon) return _dragIcon;
-  // 32×32 RGBA buffer — semi-transparent light grey square, good enough for a drag cursor
-  const buf = Buffer.alloc(32 * 32 * 4, 180);
-  _dragIcon = nativeImage.createFromBuffer(buf, { width: 32, height: 32 });
+  _dragIcon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'pdfox_logo.png'));
   return _dragIcon;
 }
 
@@ -166,11 +167,20 @@ ipcMain.handle('force-close', (event) => {
   return { ok: true };
 });
 
+// Custom window controls
+ipcMain.handle('minimize-window',  (event) => { BrowserWindow.fromWebContents(event.sender)?.minimize();  return { ok: true }; });
+ipcMain.handle('toggle-maximize',  (event) => { const w = BrowserWindow.fromWebContents(event.sender); if (w) w.isMaximized() ? w.unmaximize() : w.maximize(); return { ok: true }; });
+ipcMain.handle('close-window',     (event) => { BrowserWindow.fromWebContents(event.sender)?.close();     return { ok: true }; });
+
 // Tell the source window to close the tab that was dragged into another window
 ipcMain.handle('notify-tab-transferred', (_event, sourceWindowId, filePath) => {
   const win = BrowserWindow.fromId(sourceWindowId);
   if (win) win.webContents.send('close-tab-by-filepath', filePath);
   return { ok: true };
+});
+
+ipcMain.on('open-devtools', (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
 });
 
 // Initiate a native OS file drag so external apps (Outlook, Explorer, etc.) can receive the file.
@@ -182,11 +192,46 @@ ipcMain.on('start-drag', (event, filePath) => {
 
 // ── App lifecycle ──────────────────────────────────────────────
 
-app.whenReady().then(() => {
-  createWindow();
-  buildMenu();
-});
+// Extract a .pdf path from an argv array (skips flags and the executable itself)
+function getArgvFile(argv) {
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (a && !a.startsWith('-') && a.toLowerCase().endsWith('.pdf')) {
+      try { if (fs.existsSync(a)) return a; } catch { /* ignore */ }
+    }
+  }
+  return null;
+}
 
-app.on('window-all-closed', () => {
+// Single-instance lock: if another PDFox is already running, forward the
+// file to it and quit, so the user always ends up with one window.
+const gotLock = app.requestSingleInstanceLock();
+
+if (!gotLock) {
   app.quit();
-});
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const filePath = getArgvFile(argv);
+    // Find the existing window, bring it forward, and open the file as a new tab
+    const wins = BrowserWindow.getAllWindows();
+    const win  = wins[0];
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    if (filePath) {
+      try {
+        const buffer = fs.readFileSync(filePath);
+        win.webContents.send('open-file-data', { filePath, buffer: buffer.buffer });
+      } catch { /* ignore */ }
+    }
+  });
+
+  app.whenReady().then(() => {
+    createWindow(getArgvFile(process.argv));
+    buildMenu();
+  });
+
+  app.on('window-all-closed', () => {
+    app.quit();
+  });
+}

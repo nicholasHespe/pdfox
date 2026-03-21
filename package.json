@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "set ELECTRON_RUN_AS_NODE=&& electron .",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win portable",
+    "build-win": "electron-builder --win nsis portable --x64"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
@@ -18,13 +19,29 @@
   "build": {
     "appId": "com.pdfox.app",
     "productName": "PDFox",
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF Document",
+        "description": "Open with PDFox",
+        "role": "Viewer",
+        "icon": "assets/pdfox_logo.ico"
+      }
+    ],
     "win": {
+      "icon": "assets/pdfox_logo.ico",
       "target": [
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
+        { "target": "nsis",     "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
     },
     "files": [
       "main.js",
