@@ -92,13 +92,13 @@ A lightweight, standalone PDF viewer for Windows and macOS focused on speed and 
 ## Building from source
 
 ```
-npm install
-npm start           # run in development
-npm run build-win   # Windows: NSIS installer + portable exe → dist/
-npm run build-mac   # macOS:   universal DMG → dist/
+pnpm install
+pnpm start           # run in development
+pnpm run build-win   # Windows: NSIS installer + portable exe → dist/
+pnpm run build-mac   # macOS:   universal DMG → dist/
 ```
 
-Requires Node.js 18+ and npm. Mac builds must be run on macOS.
+Requires Node.js 18+ and [pnpm](https://pnpm.io) (`npm install -g pnpm`). Mac builds must be run on macOS.
 
 ---
 
