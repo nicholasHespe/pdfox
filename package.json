@@ -1,5 +1,5 @@
 {
-  "name": "pdfox",
+  "name": "reamlet",
   "version": "0.2.0",
   "description": "Lightweight standalone PDF viewer for Windows",
   "main": "out/main.js",
@@ -23,26 +23,26 @@
     "@types/node": "^20.0.0"
   },
   "build": {
-    "appId": "com.pdfox.app",
-    "productName": "PDFox",
+    "appId": "com.reamlet.app",
+    "productName": "Reamlet",
     "fileAssociations": [
       {
         "ext": "pdf",
         "name": "PDF Document",
-        "description": "Open with PDFox",
+        "description": "Open with Reamlet",
         "role": "Viewer",
-        "icon": "assets/pdfox_logo.ico"
+        "icon": "assets/icon.ico"
       }
     ],
     "win": {
-      "icon": "assets/pdfox_logo.ico",
+      "icon": "assets/icon.ico",
       "target": [
         { "target": "nsis",     "arch": ["x64"] },
         { "target": "portable", "arch": ["x64"] }
       ]
     },
     "mac": {
-      "icon": "assets/pdfox_logo.icns",
+      "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         { "target": "dmg", "arch": ["universal"] }

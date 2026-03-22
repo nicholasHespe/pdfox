@@ -1,4 +1,4 @@
-// PDFox — PDF.js viewer wrapper
+// Reamlet — PDF.js viewer wrapper
 // Handles loading, rendering, zoom, rotation and viewport exposure.
 // SPDX-License-Identifier: GPL-3.0-or-later
 

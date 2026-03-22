@@ -1,4 +1,4 @@
-// PDFox — Find bar (Ctrl+F)
+// Reamlet — Find bar (Ctrl+F)
 // Searches text content across pages/tabs with exact, wildcard, and fuzzy modes.
 // SPDX-License-Identifier: GPL-3.0-or-later
 

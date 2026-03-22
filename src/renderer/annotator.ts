@@ -1,4 +1,4 @@
-// PDFox — annotation layer
+// Reamlet — annotation layer
 // Manages canvas overlays per page and stores annotation objects in memory.
 // SPDX-License-Identifier: GPL-3.0-or-later
 

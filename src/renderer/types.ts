@@ -1,4 +1,4 @@
-// PDFox — shared renderer types
+// Reamlet — shared renderer types
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { PDFViewer } from './viewer.js';

@@ -1,4 +1,4 @@
-// PDFox — renderer entry point
+// Reamlet — renderer entry point
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { PDFViewer }        from './viewer.js';
@@ -93,7 +93,7 @@ document.getElementById('btn-win-max')!.addEventListener('click',   () => window
 document.getElementById('btn-win-close')!.addEventListener('click', () => window.api.closeWindow());
 
 function updateTitleBar(tab: Tab | null) {
-  titleFilename.textContent = tab?.filePath ?? 'PDFox';
+  titleFilename.textContent = tab?.filePath ?? 'Reamlet';
 }
 
 // ── Window ID ──────────────────────────────────────────────────
@@ -330,9 +330,9 @@ function renderTabBar() {
       e.dataTransfer!.effectAllowed = 'move';
       e.dataTransfer!.setData('tab-id', String(t.id));
       // Cross-window identification
-      e.dataTransfer!.setData('pdfox-tab-filepath',  t.filePath || '');
-      e.dataTransfer!.setData('pdfox-tab-source-id', String(myWindowId || ''));
-      e.dataTransfer!.setData('pdfox-tab-dirty',     t.dirty ? '1' : '0');
+      e.dataTransfer!.setData('reamlet-tab-filepath',  t.filePath || '');
+      e.dataTransfer!.setData('reamlet-tab-source-id', String(myWindowId || ''));
+      e.dataTransfer!.setData('reamlet-tab-dirty',     t.dirty ? '1' : '0');
       setTimeout(() => el.style.opacity = '0.5', 0);
     });
 
@@ -390,7 +390,7 @@ function renderTabBar() {
 // Bring this window to front as soon as an external tab drag enters anywhere in the window.
 // dragenter fires on entry; _dragOverFocused guards against repeat calls.
 document.addEventListener('dragenter', (e) => {
-  if (e.dataTransfer!.types.includes('pdfox-tab-filepath') && !_dragOverFocused) {
+  if (e.dataTransfer!.types.includes('reamlet-tab-filepath') && !_dragOverFocused) {
     _dragOverFocused = true;
     window.api.focusWindow();
   }
@@ -401,7 +401,7 @@ document.addEventListener('dragleave', (e) => {
 });
 
 tabBar.addEventListener('dragover', (e) => {
-  if (e.dataTransfer!.types.includes('pdfox-tab-filepath')) {
+  if (e.dataTransfer!.types.includes('reamlet-tab-filepath')) {
     e.preventDefault();
     e.dataTransfer!.dropEffect = 'move';
     tabBar.classList.add('drag-over-external');
@@ -415,9 +415,9 @@ tabBar.addEventListener('dragleave', (e) => {
 tabBar.addEventListener('drop', async (e) => {
   tabBar.classList.remove('drag-over-external');
   _dragOverFocused = false; // reset so the next drag to this window also focuses it
-  const filepath = e.dataTransfer!.getData('pdfox-tab-filepath');
-  const sourceId = Number(e.dataTransfer!.getData('pdfox-tab-source-id'));
-  const isDirty  = e.dataTransfer!.getData('pdfox-tab-dirty') === '1';
+  const filepath = e.dataTransfer!.getData('reamlet-tab-filepath');
+  const sourceId = Number(e.dataTransfer!.getData('reamlet-tab-source-id'));
+  const isDirty  = e.dataTransfer!.getData('reamlet-tab-dirty') === '1';
   if (!filepath || sourceId === myWindowId) return; // same window handled by tab elements
 
   e.preventDefault();

@@ -1,4 +1,4 @@
-# PDFox
+# Reamlet
 A lightweight, standalone PDF viewer for Windows and macOS focused on speed and productivity. No bloat, no cloud, no accounts. Does one thing well.
 
 ---
@@ -8,15 +8,15 @@ A lightweight, standalone PDF viewer for Windows and macOS focused on speed and 
 ### Windows
 | | |
 |---|---|
-| **Installer** (recommended) | [PDFox Setup — latest release](https://github.com/nicholasHespe/pdfox/releases/latest) |
-| **Portable** (no install needed) | [PDFox portable — latest release](https://github.com/nicholasHespe/pdfox/releases/latest) |
+| **Installer** (recommended) | [Reamlet Setup — latest release](https://github.com/nicholasHespe/Reamlet/releases/latest) |
+| **Portable** (no install needed) | [Reamlet portable — latest release](https://github.com/nicholasHespe/Reamlet/releases/latest) |
 
 > Windows 10/11 x64. No runtime or dependencies required.
 
 ### macOS
 | | |
 |---|---|
-| **DMG** (Intel + Apple Silicon) | [PDFox — latest release](https://github.com/nicholasHespe/pdfox/releases/latest) |
+| **DMG** (Intel + Apple Silicon) | [Reamlet — latest release](https://github.com/nicholasHespe/Reamlet/releases/latest) |
 
 > macOS universal binary — runs natively on both Intel and Apple Silicon.
 
@@ -35,7 +35,7 @@ A lightweight, standalone PDF viewer for Windows and macOS focused on speed and 
 - **Rotation** — rotate all pages or individual pages; persisted per session
 - **Save / Save As** — saves annotations directly into the PDF file so they open in any viewer
 - **Memory-efficient** — inactive tabs are put to sleep automatically and wake on demand
-- **Set as default** — install once, set PDFox as your default PDF viewer and forget
+- **Set as default** — install once, set Reamlet as your default PDF viewer and forget
 
 ---
 
