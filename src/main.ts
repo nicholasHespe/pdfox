@@ -3,6 +3,8 @@
 
 'use strict';
 
+import type { BrowserWindow as BW, NativeImage, IpcMainInvokeEvent, IpcMainEvent, Event as ElectronEvent } from 'electron';
+
 const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs   = require('fs');
@@ -11,14 +13,14 @@ const fs   = require('fs');
 
 const isMac = process.platform === 'darwin';
 
-function createWindow(openFilePath) {
+function createWindow(openFilePath: string | null): BW {
   const win = new BrowserWindow({
     width: 1280,
     height: 900,
     minWidth: 640,
     minHeight: 480,
     title: 'PDFox',
-    icon: path.join(__dirname, 'assets', 'pdfox_logo.png'),
+    icon: path.join(__dirname, '..', 'assets', 'pdfox_logo.png'),
     backgroundColor: '#1e1e1e',
     // Mac: use native traffic lights with hidden titlebar; Windows: fully custom frame
     ...(isMac
@@ -33,10 +35,10 @@ function createWindow(openFilePath) {
     },
   });
 
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   // Ask renderer to handle the close so it can prompt for unsaved changes
-  win.on('close', (e) => {
+  win.on('close', (e: ElectronEvent) => {
     e.preventDefault();
     win.webContents.send('before-close');
   });
@@ -56,7 +58,7 @@ function createWindow(openFilePath) {
   return win;
 }
 
-function buildMenu() {
+function buildMenu(): void {
   const fw = () => BrowserWindow.getFocusedWindow();
   const template = [
     {
@@ -85,16 +87,16 @@ function buildMenu() {
 
 // ── Drag icon (created once, reused for all native file drags) ──
 
-let _dragIcon = null;
-function getDragIcon() {
+let _dragIcon: NativeImage | null = null;
+function getDragIcon(): NativeImage {
   if (_dragIcon) return _dragIcon;
-  _dragIcon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'pdfox_logo.png'));
-  return _dragIcon;
+  _dragIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'pdfox_logo.png'));
+  return _dragIcon!;
 }
 
 // ── IPC handlers ───────────────────────────────────────────────
 
-ipcMain.handle('open-file-dialog', async (event) => {
+ipcMain.handle('open-file-dialog', async (event: IpcMainInvokeEvent) => {
   const win    = BrowserWindow.fromWebContents(event.sender);
   const result = await dialog.showOpenDialog(win, {
     title:      'Open PDF',
@@ -102,13 +104,13 @@ ipcMain.handle('open-file-dialog', async (event) => {
     properties: ['openFile', 'multiSelections'],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
-  return result.filePaths.map(filePath => ({
+  return result.filePaths.map((filePath: string) => ({
     filePath,
     buffer: Buffer.from(fs.readFileSync(filePath)),
   }));
 });
 
-ipcMain.handle('save-file', async (event, filePath, arrayBuffer) => {
+ipcMain.handle('save-file', async (event: IpcMainInvokeEvent, filePath: string, arrayBuffer: ArrayBuffer) => {
   if (!filePath) return { ok: false, error: 'no file path' };
   const win = BrowserWindow.fromWebContents(event.sender);
   const { response } = await dialog.showMessageBox(win, {
@@ -122,37 +124,39 @@ ipcMain.handle('save-file', async (event, filePath, arrayBuffer) => {
     fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
   }
 });
 
-ipcMain.handle('save-file-copy', async (event, arrayBuffer) => {
+ipcMain.handle('save-file-copy', async (event: IpcMainInvokeEvent, arrayBuffer: ArrayBuffer, defaultPath?: string) => {
   const win    = BrowserWindow.fromWebContents(event.sender);
   const result = await dialog.showSaveDialog(win, {
-    title: 'Save Copy', filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    title: 'Save Copy',
+    ...(defaultPath ? { defaultPath } : {}),
+    filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
   });
   if (result.canceled || !result.filePath) return { ok: false };
   try {
     fs.writeFileSync(result.filePath, Buffer.from(arrayBuffer));
     return { ok: true, filePath: result.filePath };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
   }
 });
 
 // Open a new PDFox window, optionally pre-loading a file
-ipcMain.handle('open-new-window', (_event, filePath) => {
+ipcMain.handle('open-new-window', (_event: IpcMainInvokeEvent, filePath?: string) => {
   createWindow(filePath || null);
   return { ok: true };
 });
 
 // Return the BrowserWindow ID so the renderer can tag its drags
-ipcMain.handle('get-window-id', (event) => {
+ipcMain.handle('get-window-id', (event: IpcMainInvokeEvent) => {
   return BrowserWindow.fromWebContents(event.sender)?.id ?? null;
 });
 
 // Read a file from disk and return its buffer (used for cross-window tab drops)
-ipcMain.handle('open-file-from-path', (_event, filePath) => {
+ipcMain.handle('open-file-from-path', (_event: IpcMainInvokeEvent, filePath: string) => {
   try {
     const buffer = fs.readFileSync(filePath);
     return { filePath, buffer: Buffer.from(buffer) };
@@ -161,37 +165,44 @@ ipcMain.handle('open-file-from-path', (_event, filePath) => {
   }
 });
 
+// Show a native message box and return the index of the button pressed
+ipcMain.handle('show-message-box', async (event: IpcMainInvokeEvent, options: Electron.MessageBoxOptions) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { response } = await dialog.showMessageBox(win, options);
+  return response;
+});
+
 // Bring this window to the front (called when an external drag hovers over it)
-ipcMain.handle('focus-window', (event) => {
+ipcMain.handle('focus-window', (event: IpcMainInvokeEvent) => {
   BrowserWindow.fromWebContents(event.sender)?.focus();
   return { ok: true };
 });
 
 // Destroy window unconditionally (after renderer confirms close is OK)
-ipcMain.handle('force-close', (event) => {
+ipcMain.handle('force-close', (event: IpcMainInvokeEvent) => {
   BrowserWindow.fromWebContents(event.sender)?.destroy();
   return { ok: true };
 });
 
 // Custom window controls
-ipcMain.handle('minimize-window',  (event) => { BrowserWindow.fromWebContents(event.sender)?.minimize();  return { ok: true }; });
-ipcMain.handle('toggle-maximize',  (event) => { const w = BrowserWindow.fromWebContents(event.sender); if (w) w.isMaximized() ? w.unmaximize() : w.maximize(); return { ok: true }; });
-ipcMain.handle('close-window',     (event) => { BrowserWindow.fromWebContents(event.sender)?.close();     return { ok: true }; });
+ipcMain.handle('minimize-window',  (event: IpcMainInvokeEvent) => { BrowserWindow.fromWebContents(event.sender)?.minimize();  return { ok: true }; });
+ipcMain.handle('toggle-maximize',  (event: IpcMainInvokeEvent) => { const w = BrowserWindow.fromWebContents(event.sender); if (w) w.isMaximized() ? w.unmaximize() : w.maximize(); return { ok: true }; });
+ipcMain.handle('close-window',     (event: IpcMainInvokeEvent) => { BrowserWindow.fromWebContents(event.sender)?.close();     return { ok: true }; });
 
 // Tell the source window to close the tab that was dragged into another window
-ipcMain.handle('notify-tab-transferred', (_event, sourceWindowId, filePath) => {
+ipcMain.handle('notify-tab-transferred', (_event: IpcMainInvokeEvent, sourceWindowId: number, filePath: string) => {
   const win = BrowserWindow.fromId(sourceWindowId);
   if (win) win.webContents.send('close-tab-by-filepath', filePath);
   return { ok: true };
 });
 
-ipcMain.on('open-devtools', (event) => {
+ipcMain.on('open-devtools', (event: IpcMainEvent) => {
   BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
 });
 
 // Initiate a native OS file drag so external apps (Outlook, Explorer, etc.) can receive the file.
 // Must be ipcMain.on (synchronous) — startDrag() must be called in the same tick as the IPC event.
-ipcMain.on('start-drag', (event, filePath) => {
+ipcMain.on('start-drag', (event: IpcMainEvent, filePath: string) => {
   if (!filePath || !fs.existsSync(filePath)) return;
   event.sender.startDrag({ file: filePath, icon: getDragIcon() });
 });
@@ -200,9 +211,9 @@ ipcMain.on('start-drag', (event, filePath) => {
 
 // On macOS, file-open requests arrive via this event (not argv).
 // It can fire before app is ready, so queue the path if needed.
-let _pendingOpenFile = null;
+let _pendingOpenFile: string | null = null;
 
-app.on('open-file', (e, filePath) => {
+app.on('open-file', (e: ElectronEvent, filePath: string) => {
   e.preventDefault();
   if (!app.isReady()) {
     _pendingOpenFile = filePath;
@@ -223,7 +234,7 @@ app.on('open-file', (e, filePath) => {
 });
 
 // Extract a .pdf path from an argv array (skips flags and the executable itself)
-function getArgvFile(argv) {
+function getArgvFile(argv: string[]): string | null {
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a && !a.startsWith('-') && a.toLowerCase().endsWith('.pdf')) {
@@ -240,7 +251,7 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, argv) => {
+  app.on('second-instance', (_event: ElectronEvent, argv: string[]) => {
     const filePath = getArgvFile(argv);
     // Find the existing window, bring it forward, and open the file as a new tab
     const wins = BrowserWindow.getAllWindows();

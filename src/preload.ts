@@ -3,6 +3,8 @@
 
 'use strict';
 
+import type { MessageBoxOptions } from 'electron';
+
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
@@ -10,45 +12,48 @@ contextBridge.exposeInMainWorld('api', {
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
 
   // Overwrite file at filePath
-  saveFile: (filePath, arrayBuffer) => ipcRenderer.invoke('save-file', filePath, arrayBuffer),
+  saveFile: (filePath: string, arrayBuffer: ArrayBuffer) => ipcRenderer.invoke('save-file', filePath, arrayBuffer),
 
-  // Save-as dialog
-  saveFileCopy: (arrayBuffer) => ipcRenderer.invoke('save-file-copy', arrayBuffer),
+  // Save-as dialog (defaultPath is optional; used for combined tabs to suggest a directory)
+  saveFileCopy: (arrayBuffer: ArrayBuffer, defaultPath?: string) => ipcRenderer.invoke('save-file-copy', arrayBuffer, defaultPath),
+
+  // Show a native message box; returns the index of the button pressed
+  showMessageBox: (options: MessageBoxOptions) => ipcRenderer.invoke('show-message-box', options),
 
   // Open a new window, optionally preloading a file path
-  openNewWindow: (filePath) => ipcRenderer.invoke('open-new-window', filePath),
+  openNewWindow: (filePath?: string) => ipcRenderer.invoke('open-new-window', filePath),
 
   // This window's Electron BrowserWindow ID (for cross-window drag tagging)
   getWindowId: () => ipcRenderer.invoke('get-window-id'),
 
   // Read a PDF from disk (for cross-window tab drag target)
-  openFileFromPath: (filePath) => ipcRenderer.invoke('open-file-from-path', filePath),
+  openFileFromPath: (filePath: string) => ipcRenderer.invoke('open-file-from-path', filePath),
 
   // Tell the source window to close the tab that was just accepted here
-  notifyTabTransferred: (sourceWindowId, filePath) =>
+  notifyTabTransferred: (sourceWindowId: number, filePath: string) =>
     ipcRenderer.invoke('notify-tab-transferred', sourceWindowId, filePath),
 
   // Subscribe to menu events
-  onMenuEvent: (callback) => {
+  onMenuEvent: (callback: (event: string) => void) => {
     ['menu-open', 'menu-save', 'menu-save-copy', 'menu-close-tab', 'menu-reopen-tab']
       .forEach(ev => ipcRenderer.on(ev, () => callback(ev)));
   },
 
   // File data pushed from main when a new window opens with a pre-selected file
-  onOpenFileData: (callback) => {
-    ipcRenderer.on('open-file-data', (_e, data) => callback(data));
+  onOpenFileData: (callback: (data: { filePath: string; buffer: ArrayBuffer }) => void) => {
+    ipcRenderer.on('open-file-data', (_e: unknown, data: { filePath: string; buffer: ArrayBuffer }) => callback(data));
   },
 
   // Main relays this when another window accepted one of our tabs via drag
-  onCloseTabByFilepath: (callback) => {
-    ipcRenderer.on('close-tab-by-filepath', (_e, filePath) => callback(filePath));
+  onCloseTabByFilepath: (callback: (filePath: string) => void) => {
+    ipcRenderer.on('close-tab-by-filepath', (_e: unknown, filePath: string) => callback(filePath));
   },
 
   // Initiate a native OS file drag (for dragging into Outlook, Explorer, etc.)
-  startDrag: (filePath) => ipcRenderer.send('start-drag', filePath),
+  startDrag: (filePath: string) => ipcRenderer.send('start-drag', filePath),
 
   // Scale the entire UI (webFrame zoom, 1.0 = 100%)
-  setUiZoom: (factor) => webFrame.setZoomFactor(factor),
+  setUiZoom: (factor: number) => webFrame.setZoomFactor(factor),
   getUiZoom: () => webFrame.getZoomFactor(),
 
   // Custom window controls (used because frame: false removes native chrome)
@@ -69,7 +74,7 @@ contextBridge.exposeInMainWorld('api', {
   forceClose: () => ipcRenderer.invoke('force-close'),
 
   // Main fires this when the OS close button is pressed
-  onBeforeClose: (callback) => {
+  onBeforeClose: (callback: () => void) => {
     ipcRenderer.on('before-close', () => callback());
   },
 });

@@ -1,13 +1,16 @@
 {
   "name": "pdfox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lightweight standalone PDF viewer for Windows",
-  "main": "main.js",
+  "main": "out/main.js",
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "start": "electron .",
-    "dist": "electron-builder --win portable",
-    "build-win": "electron-builder --win nsis portable --x64",
-    "build-mac": "electron-builder --mac dmg --universal"
+    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
+    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
+    "start": "pnpm run build && electron out/main.js",
+    "dist": "pnpm run build && electron-builder --win portable",
+    "build-win": "pnpm run build && electron-builder --win nsis portable --x64",
+    "build-mac": "pnpm run build && electron-builder --mac dmg --universal"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
@@ -15,7 +18,9 @@
   },
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0"
   },
   "build": {
     "appId": "com.pdfox.app",
@@ -52,12 +57,14 @@
       "runAfterFinish": true
     },
     "files": [
-      "main.js",
-      "preload.js",
-      "renderer/**/*",
+      "out/**/*",
+      "renderer/index.html",
       "assets/**/*",
       "node_modules/**/*"
     ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron"]
   },
   "license": "GPL-3.0-or-later"
 }
