@@ -1,17 +1,18 @@
 // PDFox — Find bar (Ctrl+F)
 // Searches text content across pages/tabs with exact, wildcard, and fuzzy modes.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// @ts-nocheck — types to be added incrementally
 
+// @ts-ignore — pdfjs-dist is imported via direct path for Electron's file:// ESM loader
 import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
+import type { Tab, Match } from './types.js';
 
 // ── Utilities ───────────────────────────────────────────────────
 
-function applyTransform([a, b, c, d, e, f], x, y) {
+function applyTransform([a, b, c, d, e, f]: number[], x: number, y: number): [number, number] {
   return [a * x + c * y + e, b * x + d * y + f];
 }
 
-function levenshtein(a, b) {
+function levenshtein(a: string, b: string): number {
   const m = a.length, n = b.length;
   let prev = Array.from({ length: n + 1 }, (_, i) => i);
   for (let i = 1; i <= m; i++) {
@@ -29,28 +30,28 @@ function levenshtein(a, b) {
 // ── FindBar class ───────────────────────────────────────────────
 
 export class FindBar {
-  _getTabs: () => any[];
-  _getActiveTab: () => any;
-  _switchTab: (tab: any) => void;
-  _allTabMatches: Map<any, any[]>;
-  _matches: any[];
+  _getTabs: () => Tab[];
+  _getActiveTab: () => Tab | null;
+  _switchTab: (tab: Tab) => void;
+  _allTabMatches: Map<number, Match[]>;
+  _matches: Match[];
   _currentIdx: number;
   _query: string;
   _scope: string;
   _mode: string;
   _open: boolean;
   _searchTimer: ReturnType<typeof setTimeout> | null;
-  _layers: WeakMap<any, any>;
-  _allLayers: any[];
-  _bar: HTMLElement | null;
-  _input: HTMLElement | null;
-  _counter: HTMLElement | null;
-  _prev: HTMLElement | null;
-  _next: HTMLElement | null;
-  _close: HTMLElement | null;
-  _dropdown: HTMLElement | null;
+  _layers: WeakMap<HTMLDivElement, HTMLDivElement>;
+  _allLayers: HTMLDivElement[];
+  _bar: HTMLElement;
+  _input: HTMLInputElement;
+  _counter: HTMLElement;
+  _prev: HTMLElement;
+  _next: HTMLElement;
+  _close: HTMLElement;
+  _dropdown: HTMLElement;
 
-  constructor({ getTabs, getActiveTab, switchTab }) {
+  constructor({ getTabs, getActiveTab, switchTab }: { getTabs: () => Tab[]; getActiveTab: () => Tab | null; switchTab: (tab: Tab) => void }) {
     this._getTabs      = getTabs;
     this._getActiveTab = getActiveTab;
     this._switchTab    = switchTab;
@@ -72,20 +73,20 @@ export class FindBar {
     this._allLayers = [];
 
     // DOM refs
-    this._bar      = document.getElementById('find-bar');
-    this._input    = document.getElementById('find-input');
-    this._counter  = document.getElementById('find-counter');
-    this._prev     = document.getElementById('find-prev');
-    this._next     = document.getElementById('find-next');
-    this._close    = document.getElementById('find-close');
-    this._dropdown = document.getElementById('find-dropdown');
+    this._bar      = document.getElementById('find-bar')!;
+    this._input    = document.getElementById('find-input') as HTMLInputElement;
+    this._counter  = document.getElementById('find-counter')!;
+    this._prev     = document.getElementById('find-prev')!;
+    this._next     = document.getElementById('find-next')!;
+    this._close    = document.getElementById('find-close')!;
+    this._dropdown = document.getElementById('find-dropdown')!;
 
     this._wireEvents();
   }
 
   _wireEvents() {
     this._input.addEventListener('input', () => {
-      clearTimeout(this._searchTimer);
+      clearTimeout(this._searchTimer ?? undefined);
       this._searchTimer = setTimeout(() => this._search(), 150);
     });
 
@@ -103,7 +104,7 @@ export class FindBar {
       btn.addEventListener('click', () => {
         this._bar.querySelectorAll('[data-scope]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        this._scope = btn.dataset.scope;
+        this._scope = (btn as HTMLElement).dataset.scope ?? 'current';
         if (this._scope === 'current') this._hideDropdown();
         this._search();
       });
@@ -116,7 +117,7 @@ export class FindBar {
         this._bar.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
         if (!wasActive) {
           btn.classList.add('active');
-          this._mode = btn.dataset.mode;
+          this._mode = (btn as HTMLElement).dataset.mode ?? 'exact';
         } else {
           this._mode = 'exact';
         }
@@ -150,9 +151,12 @@ export class FindBar {
 
   isOpen() { return this._open; }
 
-  invalidateTab(tab) {
+  invalidateTab(tab: Tab) {
     delete tab._findCache;
     this._allTabMatches.delete(tab.id);
+    // Release find-layer divs for this tab's pages so canvas buffers can be GC'd.
+    // Filter by isConnected — layers become detached when viewer.sleep() clears container.innerHTML.
+    this._allLayers = this._allLayers.filter(l => l.isConnected);
   }
 
   onZoom() {
@@ -174,7 +178,7 @@ export class FindBar {
 
   // ── Text extraction ───────────────────────────────────────────
 
-  async _getTextCache(tab) {
+  async _getTextCache(tab: Tab) {
     if (!tab._findCache) tab._findCache = new Map();
 
     let pdfDoc  = tab.viewer.pdfDoc;
@@ -192,8 +196,8 @@ export class FindBar {
       const tc   = await page.getTextContent();
       tab._findCache.set(p, {
         items: tc.items
-          .filter(item => item.str)
-          .map(item => ({
+          .filter((item: any) => item.str)
+          .map((item: any) => ({
             str:    item.str,
             x:      item.transform[4],
             y:      item.transform[5],
@@ -208,8 +212,8 @@ export class FindBar {
 
   // ── Matching ──────────────────────────────────────────────────
 
-  _buildMatcher(query, mode) {
-    const norm = s => s.normalize('NFKC');
+  _buildMatcher(query: string, mode: string) {
+    const norm = (s: string) => s.normalize('NFKC');
     const q    = norm(query);
 
     if (mode === 'wildcard') {
@@ -219,7 +223,7 @@ export class FindBar {
         .replace(/\?/g, '.');
       let re;
       try { re = new RegExp(escaped, 'gi'); } catch { re = null; }
-      return (str) => {
+      return (str: string) => {
         if (!re) return [];
         const results = [];
         let m;
@@ -235,7 +239,7 @@ export class FindBar {
     if (mode === 'fuzzy') {
       const threshold = q.length < 3 ? 0 : Math.max(1, Math.floor(q.length / 5));
       const qLen      = q.length;
-      return (str) => {
+      return (str: string) => {
         const s = norm(str).toLowerCase();
         const a = q.toLowerCase();
         const results = [];
@@ -259,7 +263,7 @@ export class FindBar {
 
     // Exact (default) — case-insensitive, NFKC-normalized
     const ql = norm(q).toLowerCase();
-    return (str) => {
+    return (str: string) => {
       const results = [];
       const sl  = norm(str).toLowerCase();
       let   idx = 0;
@@ -271,10 +275,10 @@ export class FindBar {
     };
   }
 
-  async _searchTab(tab, matcher) {
+  async _searchTab(tab: Tab, matcher: (str: string) => { start: number; end: number }[]) {
     await this._getTextCache(tab);
-    const matches  = [];
-    const cache    = tab._findCache;
+    const matches: Match[]  = [];
+    const cache    = tab._findCache!;
     const numPages = cache.size;
 
     for (let p = 1; p <= numPages; p++) {
@@ -355,7 +359,7 @@ export class FindBar {
 
   // ── Dropdown (All docs mode) ──────────────────────────────────
 
-  _buildDropdown(orderedTabs) {
+  _buildDropdown(orderedTabs: Tab[]) {
     const activeTab = this._getActiveTab();
     this._dropdown.innerHTML = '';
 
@@ -365,7 +369,7 @@ export class FindBar {
 
       const row = document.createElement('div');
       row.className = 'find-doc-row' + (tab === activeTab ? ' active' : '');
-      row.dataset.tabId = tab.id;
+      row.dataset.tabId = String(tab.id);
 
       const name = document.createElement('span');
       name.className = 'find-doc-name';
@@ -385,7 +389,7 @@ export class FindBar {
     this._dropdown.classList.remove('hidden');
   }
 
-  async _selectDocRow(tab) {
+  async _selectDocRow(tab: Tab) {
     const activeTab = this._getActiveTab();
     if (tab !== activeTab) {
       await this._switchTab(tab);
@@ -405,7 +409,7 @@ export class FindBar {
     const activeTab = this._getActiveTab();
     if (!activeTab) return;
     this._dropdown.querySelectorAll('.find-doc-row').forEach(row => {
-      row.classList.toggle('active', row.dataset.tabId === String(activeTab.id));
+      row.classList.toggle('active', (row as HTMLElement).dataset.tabId === String(activeTab.id));
     });
   }
 
@@ -416,7 +420,7 @@ export class FindBar {
 
   // ── Navigation ────────────────────────────────────────────────
 
-  _navigate(dir) {
+  _navigate(dir: number) {
     if (this._matches.length === 0) return;
     this._currentIdx = (this._currentIdx + dir + this._matches.length) % this._matches.length;
     this._renderHighlights();
@@ -424,7 +428,7 @@ export class FindBar {
     this._updateCounter();
   }
 
-  async _jumpToMatch(match) {
+  async _jumpToMatch(match: Match) {
     const tab = this._getTabs().find(t => t.id === match.tabId);
     if (!tab) return;
 
@@ -442,7 +446,7 @@ export class FindBar {
 
   // ── Highlight rendering ───────────────────────────────────────
 
-  _getOrCreateLayer(wrapper) {
+  _getOrCreateLayer(wrapper: HTMLDivElement) {
     if (!this._layers.has(wrapper)) {
       const layer = document.createElement('div');
       layer.className = 'find-layer';
@@ -480,7 +484,7 @@ export class FindBar {
       div.style.top    = Math.min(sy, ey) + 'px';
       div.style.width  = Math.abs(ex - sx) + 'px';
       div.style.height = Math.abs(ey - sy) + 'px';
-      layer.appendChild(div);
+      layer!.appendChild(div);
     });
   }
 

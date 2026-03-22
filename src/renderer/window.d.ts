@@ -3,25 +3,26 @@
 interface Window {
   api: {
     openFileDialog: () => Promise<{ filePath: string; buffer: ArrayBuffer }[] | null>;
-    saveFile: (filePath: string, arrayBuffer: ArrayBuffer) => Promise<void>;
-    saveFileCopy: (arrayBuffer: ArrayBuffer) => Promise<void>;
-    openNewWindow: (filePath?: string) => Promise<void>;
+    saveFile: (filePath: string, arrayBuffer: ArrayBuffer) => Promise<{ ok: boolean; error?: string }>;
+    saveFileCopy: (arrayBuffer: ArrayBuffer, defaultPath?: string) => Promise<{ ok: boolean; filePath?: string }>;
+    showMessageBox: (options: { type?: string; buttons: string[]; title?: string; message: string; detail?: string; defaultId?: number; cancelId?: number }) => Promise<number>;
+    openNewWindow: (filePath?: string) => Promise<{ ok: boolean }>;
     getWindowId: () => Promise<number>;
     openFileFromPath: (filePath: string) => Promise<{ filePath: string; buffer: ArrayBuffer } | null>;
-    notifyTabTransferred: (sourceWindowId: number, filePath: string) => Promise<void>;
+    notifyTabTransferred: (sourceWindowId: number, filePath: string) => Promise<{ ok: boolean }>;
     onMenuEvent: (callback: (event: string) => void) => void;
     onOpenFileData: (callback: (data: { filePath: string; buffer: ArrayBuffer }) => void) => void;
     onCloseTabByFilepath: (callback: (filePath: string) => void) => void;
     startDrag: (filePath: string) => void;
     setUiZoom: (factor: number) => void;
     getUiZoom: () => number;
-    minimizeWindow: () => Promise<void>;
-    toggleMaximize: () => Promise<void>;
-    closeWindow: () => Promise<void>;
+    minimizeWindow: () => Promise<{ ok: boolean }>;
+    toggleMaximize: () => Promise<{ ok: boolean }>;
+    closeWindow: () => Promise<{ ok: boolean }>;
     platform: string;
     openDevTools: () => void;
-    focusWindow: () => Promise<void>;
-    forceClose: () => Promise<void>;
+    focusWindow: () => Promise<{ ok: boolean }>;
+    forceClose: () => Promise<{ ok: boolean }>;
     onBeforeClose: (callback: () => void) => void;
   };
 }

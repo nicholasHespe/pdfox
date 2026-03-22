@@ -1,8 +1,8 @@
 // PDFox — PDF.js viewer wrapper
 // Handles loading, rendering, zoom, rotation and viewport exposure.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// @ts-nocheck — types to be added incrementally
 
+// @ts-ignore — pdfjs-dist is imported via direct path for Electron's file:// ESM loader
 import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
 const { TextLayer } = pdfjsLib;
 
@@ -10,23 +10,33 @@ const { TextLayer } = pdfjsLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   new URL('../../node_modules/pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
 
+export interface PageData {
+  wrapper: HTMLDivElement;
+  canvas: HTMLCanvasElement;
+  textDiv: HTMLDivElement;
+  annotCanvas: HTMLCanvasElement;
+  formLayer: HTMLDivElement;
+  viewportTransform: number[] | null;
+}
+
 export class PDFViewer {
   container: HTMLElement;
   pdfDoc: any;
   scale: number;
-  pages: any[];
+  pages: PageData[];
   pageRotations: Record<number, number>;
   pageBaseRotations: Record<number, number>;
   fieldValues: Record<string, any>;
   _annCache: Record<number, any[]>;
   _pendingRender: Set<number>;
   _io: IntersectionObserver | null;
+  _pageSizeCache: Record<number, { width: number; height: number }>;
   isSleeping: boolean;
 
   /**
    * @param {HTMLElement} container  - .pdf-pages element to render pages into
    */
-  constructor(container) {
+  constructor(container: HTMLElement) {
     this.container         = container;
     this.pdfDoc            = null;
     this.scale             = 1.0;
@@ -37,11 +47,12 @@ export class PDFViewer {
     this._annCache         = {}; // pageNum → cached annotation array
     this._pendingRender    = new Set(); // pageNums needing re-render once visible
     this._io               = null;  // IntersectionObserver for deferred renders
+    this._pageSizeCache    = {}; // pageNum → { width, height } in PDF pts — survives sleep
     this.isSleeping        = false;
   }
 
   // Returns the total rotation (PDF base + user) for a page, 0/90/180/270
-  getTotalRotation(pageNum) {
+  getTotalRotation(pageNum: number): number {
     const base = this.pageBaseRotations[pageNum] || 0;
     const user = this.pageRotations[pageNum]     || 0;
     return (base + user) % 360;
@@ -49,7 +60,13 @@ export class PDFViewer {
 
   // Load from ArrayBuffer/Uint8Array and render all pages.
   // Always copies before handing to PDF.js — the worker transfers (detaches) the input buffer.
-  async load(arrayBuffer) {
+  //
+  // Phase 1: create placeholder wrappers (correct sizes, blank canvases) for every page.
+  // Phase 2: fully render only the pages that fall within the first 10 viewport-heights.
+  //          This keeps initial load fast for large documents while being imperceptible
+  //          for small ones (all pages fit in 10 viewports).
+  // Phase 3: wire up IntersectionObserver so the rest render as the user scrolls.
+  async load(arrayBuffer: ArrayBuffer | Uint8Array): Promise<void> {
     const src      = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer);
     const dataCopy = src.slice();
     this._io?.disconnect();
@@ -59,21 +76,25 @@ export class PDFViewer {
     await this.pdfDoc?.destroy();
     const loadingTask = pdfjsLib.getDocument({ data: dataCopy });
     this.pdfDoc = await loadingTask.promise;
-    this.isSleeping = false;
-    this.pages      = [];
-    this._annCache  = {};
+    this.isSleeping  = false;
+    this.pages       = [];
+    this._annCache   = {};
+    this._pageSizeCache = {}; // reset for the new document
     // pageRotations and fieldValues are preserved across sleep/wake cycles
     this.container.innerHTML = '';
+
+    // Phase 1 — create sized placeholders for every page so layout/scrollbars
+    // are correct before any rendering begins.
     for (let i = 1; i <= this.pdfDoc.numPages; i++) {
-      await this._renderPage(i);
+      await this._createPagePlaceholder(i);
     }
 
-    // Watch page wrappers: when a deferred (off-screen) page becomes visible,
-    // render it now. root = the .viewer-pane scroll container.
+    // Phase 2 — wire up the IntersectionObserver BEFORE rendering so it fires
+    // immediately for all pages currently in the intersection zone.
     this._io = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (!entry.isIntersecting) return;
-        const pageNum = Number(entry.target.dataset.page);
+        const pageNum = Number((entry.target as HTMLElement).dataset.page);
         if (this._pendingRender.has(pageNum)) {
           this._pendingRender.delete(pageNum);
           this._renderPage(pageNum); // fire-and-forget
@@ -81,14 +102,30 @@ export class PDFViewer {
       });
     }, { root: this.container.parentElement, threshold: 0 });
 
-    this.pages.forEach(pd => { if (pd) this._io.observe(pd.wrapper); });
+    this.pages.forEach(pd => { if (pd) this._io!.observe(pd.wrapper); });
+
+    // Phase 3 — eagerly render the initial 10-viewport window synchronously so
+    // there is no blank-flash on open.  Pages outside this range are left as
+    // placeholders and will be rendered by the IO as the user scrolls.
+    const pane         = this.container.parentElement;
+    const renderHeight = (pane ? pane.clientHeight : 800) * 10;
+    let   accumulated  = 0;
+    for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+      if (accumulated < renderHeight) {
+        this._pendingRender.delete(i); // won't be deferred
+        await this._renderPage(i);
+        accumulated += this.pages[i - 1]?.wrapper.offsetHeight ?? 0;
+      } else {
+        this._pendingRender.add(i);
+      }
+    }
   }
 
   // Re-render at the new scale.
   // Visible pages are rendered immediately; off-screen pages are resized
   // (so layout / scrollbars stay correct) and queued for deferred rendering
   // once they scroll into view via the IntersectionObserver.
-  async setZoom(scale) {
+  async setZoom(scale: number): Promise<void> {
     const prevScale = this.scale;
     this.scale = Math.max(0.25, Math.min(5, scale));
 
@@ -117,25 +154,44 @@ export class PDFViewer {
     }
   }
 
-  // Rotate all pages by delta degrees (cumulative, clamped to 0/90/180/270)
-  async rotateAll(delta) {
+  // Rotate all pages by delta degrees (cumulative, clamped to 0/90/180/270).
+  // Visible pages are rendered immediately; off-screen pages are resized and
+  // queued for deferred rendering via the IntersectionObserver.
+  async rotateAll(delta: number): Promise<void> {
     for (let i = 1; i <= this.pdfDoc.numPages; i++) {
       this.pageRotations[i] = ((this.pageRotations[i] || 0) + delta + 360) % 360;
     }
+
+    const visibleSet = this._getVisibleSet();
     for (let i = 1; i <= this.pdfDoc.numPages; i++) {
-      await this._renderPage(i);
+      if (visibleSet.has(i)) {
+        await this._renderPage(i);
+      } else {
+        this._resizePageForRotation(i);
+        this._pendingRender.add(i);
+      }
+    }
+
+    // After resizing off-screen pages the layout shifts; re-check which pages
+    // are now visible and render any that slipped into the viewport.
+    const nowVisible = this._getVisibleSet();
+    for (const pageNum of nowVisible) {
+      if (this._pendingRender.has(pageNum)) {
+        await this._renderPage(pageNum);
+      }
     }
   }
 
   // Rotate a single page by delta degrees
-  async rotatePage(pageNum, delta) {
+  async rotatePage(pageNum: number, delta: number): Promise<void> {
     this.pageRotations[pageNum] = ((this.pageRotations[pageNum] || 0) + delta + 360) % 360;
     await this._renderPage(pageNum);
   }
 
   // Returns the page number of the page with the most screen area currently visible
-  getVisiblePageNum() {
+  getVisiblePageNum(): number {
     const pane     = this.container.parentElement;
+    if (!pane) return 1;
     const paneRect = pane.getBoundingClientRect();
     let best = 1, bestOverlap = 0;
     this.pages.forEach((p, idx) => {
@@ -147,23 +203,27 @@ export class PDFViewer {
   }
 
   // Smooth-scroll the viewer pane to show the given page
-  scrollToPage(pageNum) {
+  scrollToPage(pageNum: number): void {
     const p = this.pages[pageNum - 1];
     if (p) p.wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   // Returns the PDF.js viewport for a given 1-based page number (includes user rotation)
-  async getViewport(pageNum) {
+  async getViewport(pageNum: number): Promise<any> {
     const page     = await this.pdfDoc.getPage(pageNum);
     const rotation = (page.rotate + (this.pageRotations[pageNum] || 0)) % 360;
     return page.getViewport({ scale: this.scale, rotation });
   }
 
-  // Returns { width, height } of the unscaled PDF page in PDF pts (no user rotation)
-  async getPageSize(pageNum) {
+  // Returns { width, height } of the unscaled PDF page in PDF pts (no user rotation).
+  // Results are cached so this works even while the viewer is sleeping (pdfDoc is null).
+  async getPageSize(pageNum: number): Promise<{ width: number; height: number }> {
+    if (this._pageSizeCache[pageNum]) return this._pageSizeCache[pageNum];
     const page = await this.pdfDoc.getPage(pageNum);
     const vp   = page.getViewport({ scale: 1.0 });
-    return { width: vp.width, height: vp.height };
+    const size = { width: vp.width, height: vp.height };
+    this._pageSizeCache[pageNum] = size;
+    return size;
   }
 
   // Returns the PDF outline (bookmarks) array, or null if none
@@ -173,7 +233,7 @@ export class PDFViewer {
   }
 
   // Resolve an outline destination (string or array) to a 1-based page number
-  async resolveOutlineDest(dest) {
+  async resolveOutlineDest(dest: any): Promise<number | null> {
     if (!dest) return null;
     let explicitDest = dest;
     if (typeof dest === 'string') {
@@ -189,13 +249,13 @@ export class PDFViewer {
   }
 
   // Render a page thumbnail at a small scale; returns a data URL (JPEG)
-  async renderThumbnail(pageNum, scale = 0.4) {
+  async renderThumbnail(pageNum: number, scale = 0.4): Promise<string> {
     const page     = await this.pdfDoc.getPage(pageNum);
     const viewport = page.getViewport({ scale });
     const canvas   = document.createElement('canvas');
     canvas.width   = viewport.width;
     canvas.height  = viewport.height;
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
     return canvas.toDataURL('image/jpeg', 0.92);
   }
 
@@ -213,15 +273,21 @@ export class PDFViewer {
     this.isSleeping = true;
   }
 
+  // Permanently release all resources; the viewer cannot be used after this.
+  destroy() {
+    this.sleep();
+  }
+
   // ── Private ────────────────────────────────────────────────
 
   // Returns a Set of 1-based page numbers whose wrappers overlap the visible
   // area of the scroll pane. Synchronous — uses offsetTop / offsetHeight.
-  _getVisibleSet() {
-    const pane   = this.container.parentElement;
+  _getVisibleSet(): Set<number> {
+    const pane = this.container.parentElement;
+    if (!pane) return new Set<number>();
     const top    = pane.scrollTop;
     const bottom = top + pane.clientHeight;
-    const visible = new Set();
+    const visible = new Set<number>();
     this.pages.forEach((pd, idx) => {
       if (!pd) return;
       const pageTop    = pd.wrapper.offsetTop;
@@ -233,11 +299,32 @@ export class PDFViewer {
     return visible;
   }
 
+  // Resize a page's wrapper and canvases to account for a rotation change,
+  // using the cached unscaled page size to compute the new dimensions.
+  // Swaps width↔height when rotating to/from 90° or 270°.
+  _resizePageForRotation(pageNum: number): void {
+    const pd     = this.pages[pageNum - 1];
+    const cached = this._pageSizeCache[pageNum];
+    if (!pd || !cached) return;
+    const rot = this.getTotalRotation(pageNum);
+    const sw  = (rot % 180 === 0) ? cached.width  : cached.height;
+    const sh  = (rot % 180 === 0) ? cached.height : cached.width;
+    const w   = Math.round(sw * this.scale);
+    const h   = Math.round(sh * this.scale);
+    pd.wrapper.style.width  = `${w}px`;
+    pd.wrapper.style.height = `${h}px`;
+    pd.wrapper.style.setProperty('--scale-factor', String(this.scale));
+    pd.canvas.width        = w;
+    pd.canvas.height       = h;
+    pd.annotCanvas.width   = w;
+    pd.annotCanvas.height  = h;
+  }
+
   // Resize a page's wrapper and canvases to the new scale using a ratio
   // (prevScale → this.scale) without issuing a PDF.js render call.
   // Clearing canvas.width resets the canvas content, leaving it blank until
   // the deferred render fires when the page scrolls into view.
-  _resizePageLayout(pageNum, prevScale) {
+  _resizePageLayout(pageNum: number, prevScale: number): void {
     const pd = this.pages[pageNum - 1];
     if (!pd || !prevScale) return;
     const ratio = this.scale / prevScale;
@@ -245,18 +332,74 @@ export class PDFViewer {
     const newH  = Math.round(pd.canvas.height * ratio);
     pd.wrapper.style.width  = `${newW}px`;
     pd.wrapper.style.height = `${newH}px`;
-    pd.wrapper.style.setProperty('--scale-factor', this.scale);
+    pd.wrapper.style.setProperty('--scale-factor', String(this.scale));
     pd.canvas.width       = newW;
     pd.canvas.height      = newH;
     pd.annotCanvas.width  = newW;
     pd.annotCanvas.height = newH;
   }
 
-  async _renderPage(pageNum) {
+  // Create a sized wrapper with blank canvases for a page without running the
+  // PDF.js render pipeline.  This is used during load() so every page has the
+  // right dimensions for layout / scrollbar accuracy before we start rendering.
+  async _createPagePlaceholder(pageNum: number): Promise<void> {
+    const page     = await this.pdfDoc.getPage(pageNum);
+    const userRot  = this.pageRotations[pageNum] || 0;
+    this.pageBaseRotations[pageNum] = page.rotate;
+
+    // Cache unscaled page size so getPageSize() works while sleeping.
+    if (!this._pageSizeCache[pageNum]) {
+      const vp1 = page.getViewport({ scale: 1.0 });
+      this._pageSizeCache[pageNum] = { width: vp1.width, height: vp1.height };
+    }
+
+    const rotation = (page.rotate + userRot) % 360;
+    const viewport = page.getViewport({ scale: this.scale, rotation });
+    const idx      = pageNum - 1;
+    if (this.pages[idx]) return; // already created
+
+    const wrapper     = document.createElement('div');
+    const canvas      = document.createElement('canvas');
+    const textDiv     = document.createElement('div');
+    const annotCanvas = document.createElement('canvas');
+    const formLayer   = document.createElement('div');
+
+    wrapper.className     = 'page-wrapper';
+    canvas.className      = 'pdf-canvas';
+    textDiv.className     = 'textLayer';
+    annotCanvas.className = 'annot-canvas';
+    formLayer.className   = 'form-layer';
+
+    wrapper.dataset.page = String(pageNum);
+    wrapper.append(canvas, textDiv, annotCanvas, formLayer);
+    this.container.appendChild(wrapper);
+
+    wrapper.style.width  = `${viewport.width}px`;
+    wrapper.style.height = `${viewport.height}px`;
+    wrapper.style.setProperty('--scale-factor', String(this.scale));
+
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    annotCanvas.width  = viewport.width;
+    annotCanvas.height = viewport.height;
+    annotCanvas.style.pointerEvents = 'none';
+
+    // viewportTransform is null until _renderPage fills it in
+    this.pages[idx] = { wrapper, canvas, textDiv, annotCanvas, formLayer, viewportTransform: null };
+  }
+
+  async _renderPage(pageNum: number): Promise<void> {
     this._pendingRender.delete(pageNum);
     const page     = await this.pdfDoc.getPage(pageNum);
     const userRot  = this.pageRotations[pageNum] || 0;
     this.pageBaseRotations[pageNum] = page.rotate; // store for saver
+
+    // Populate the page-size cache on every render (cheap: page object is already fetched).
+    if (!this._pageSizeCache[pageNum]) {
+      const vp1 = page.getViewport({ scale: 1.0 });
+      this._pageSizeCache[pageNum] = { width: vp1.width, height: vp1.height };
+    }
+
     const rotation = (page.rotate + userRot) % 360;
     const viewport = page.getViewport({ scale: this.scale, rotation });
     const idx      = pageNum - 1;
@@ -280,7 +423,7 @@ export class PDFViewer {
       annotCanvas.className = 'annot-canvas';
       formLayer.className   = 'form-layer';
 
-      wrapper.dataset.page = pageNum;
+      wrapper.dataset.page = String(pageNum);
       wrapper.append(canvas, textDiv, annotCanvas, formLayer);
       this.container.appendChild(wrapper);
       this.pages[idx] = { wrapper, canvas, textDiv, annotCanvas, formLayer, viewportTransform: viewport.transform };
@@ -290,7 +433,7 @@ export class PDFViewer {
     wrapper.style.width  = `${viewport.width}px`;
     wrapper.style.height = `${viewport.height}px`;
     // PDF.js v4 sizes the text layer via calc(var(--scale-factor) * N px)
-    wrapper.style.setProperty('--scale-factor', this.scale);
+    wrapper.style.setProperty('--scale-factor', String(this.scale));
 
     canvas.width  = viewport.width;
     canvas.height = viewport.height;
@@ -300,7 +443,7 @@ export class PDFViewer {
     annotCanvas.style.pointerEvents = 'none';
 
     // Render PDF content
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d')!;
     await page.render({ canvasContext: ctx, viewport }).promise;
 
     // Render text layer for selection (PDF.js 4.x class-based API)
@@ -319,11 +462,11 @@ export class PDFViewer {
 
   // ── Form field overlay ──────────────────────────────────────
 
-  async _renderFormFields(pageNum, page, viewport, pageData) {
+  async _renderFormFields(pageNum: number, page: any, viewport: any, pageData: PageData): Promise<void> {
     const fl = pageData.formLayer;
 
     // Save any current values before rebuilding the layer
-    fl.querySelectorAll('[data-field-name]').forEach(el => {
+    fl.querySelectorAll('[data-field-name]').forEach((el: any) => {
       const name = el.dataset.fieldName;
       if (name) this.fieldValues[name] = el.type === 'checkbox' ? el.checked : el.value;
     });
@@ -351,7 +494,7 @@ export class PDFViewer {
       const fieldName  = ann.fieldName || '';
       const savedValue = this.fieldValues[fieldName];
 
-      let el;
+      let el: any;
 
       if (ann.fieldType === 'Tx') {
         el = ann.multiLine ? document.createElement('textarea') : document.createElement('input');
@@ -371,7 +514,7 @@ export class PDFViewer {
         // Dropdown / list box
         el = document.createElement('select');
         el.className = 'form-field form-select';
-        (ann.options || []).forEach(opt => {
+        (ann.options || []).forEach((opt: any) => {
           const o = document.createElement('option');
           o.value       = opt.exportValue;
           o.textContent = opt.displayValue || opt.exportValue;

@@ -1,20 +1,15 @@
 // PDFox — save logic
 // Embeds in-memory annotations into PDF bytes using pdf-lib.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// @ts-nocheck — types to be added incrementally
 
+// @ts-ignore — pdf-lib is imported via direct path for Electron's file:// ESM loader
 import { PDFDocument, PDFName, PDFArray, PDFNumber, PDFString, degrees } from '../../node_modules/pdf-lib/dist/pdf-lib.esm.js';
 
 /**
  * Embed annotations into a PDF and return the modified bytes.
  * Also writes any user-applied page rotations into the PDF's /Rotate entry.
- *
- * @param {Uint8Array}  pdfBytes    - original PDF bytes
- * @param {Object[]}    annotations - flat annotation list from Annotator
- * @param {PDFViewer}   viewer      - to query page dimensions and rotations
- * @returns {Promise<Uint8Array>}
  */
-export async function embedAnnotations(pdfBytes, annotations, viewer) {
+export async function embedAnnotations(pdfBytes: Uint8Array, annotations: any[], viewer: any): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
 
   // Write any form field values the user has edited
@@ -51,7 +46,7 @@ export async function embedAnnotations(pdfBytes, annotations, viewer) {
       pdfPage.setRotation(degrees((existingRot + userRot) % 360));
     }
 
-    const pageAnns = annotations.filter(a => a.pageNum === pageNum);
+    const pageAnns = annotations.filter((a: any) => a.pageNum === pageNum);
     if (pageAnns.length === 0) continue;
 
     const { width: pdfW, height: pdfH } = await viewer.getPageSize(pageNum);
@@ -85,7 +80,7 @@ export async function embedAnnotations(pdfBytes, annotations, viewer) {
  *   rot=180: pdf = ((1-nx)·W, ny·H)
  *   rot=270: pdf = (ny·W,     nx·H)
  */
-function toPdfCoords(nx, ny, pdfW, pdfH, rot) {
+function toPdfCoords(nx: number, ny: number, pdfW: number, pdfH: number, rot: number): [number, number] {
   switch ((rot || 0) % 360) {
     case 90:  return [(1 - ny) * pdfW, (1 - nx) * pdfH];
     case 180: return [(1 - nx) * pdfW,        ny * pdfH];
@@ -94,7 +89,7 @@ function toPdfCoords(nx, ny, pdfW, pdfH, rot) {
   }
 }
 
-function hexToRgb01(hex) {
+function hexToRgb01(hex: string): { r: number; g: number; b: number } {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -103,19 +98,19 @@ function hexToRgb01(hex) {
 
 // ── Annotation writers ───────────────────────────────────────
 
-function _addInkAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
+function _addInkAnnotation(pdfDoc: any, pdfPage: any, ann: any, pdfW: number, pdfH: number, rot: number): void {
   const { r, g, b } = hexToRgb01(ann.color);
 
-  const inkPoints = ann.points.flatMap(([nx, ny]) => {
+  const inkPoints = ann.points.flatMap(([nx, ny]: [number, number]) => {
     const [x, y] = toPdfCoords(nx, ny, pdfW, pdfH, rot);
     return [PDFNumber.of(x), PDFNumber.of(y)];
   });
   const inkListEntry = pdfPage.doc.context.obj(inkPoints);
   const inkList      = pdfPage.doc.context.obj([inkListEntry]);
 
-  const pdfPts = ann.points.map(([nx, ny]) => toPdfCoords(nx, ny, pdfW, pdfH, rot));
-  const xs  = pdfPts.map(([x]) => x);
-  const ys  = pdfPts.map(([, y]) => y);
+  const pdfPts = ann.points.map(([nx, ny]: [number, number]) => toPdfCoords(nx, ny, pdfW, pdfH, rot));
+  const xs  = pdfPts.map(([x]: [number, number]) => x);
+  const ys  = pdfPts.map(([, y]: [number, number]) => y);
   const pad = ann.thickness;
 
   const annotDict = pdfPage.doc.context.obj({
@@ -132,7 +127,7 @@ function _addInkAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
   _appendAnnotation(pdfPage, annotDict);
 }
 
-function _addHighlightAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
+function _addHighlightAnnotation(pdfDoc: any, pdfPage: any, ann: any, pdfW: number, pdfH: number, rot: number): void {
   const { r, g, b } = hexToRgb01(ann.color);
 
   for (const rect of ann.rects) {
@@ -164,7 +159,7 @@ function _addHighlightAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
   }
 }
 
-function _addFreeTextAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
+function _addFreeTextAnnotation(pdfDoc: any, pdfPage: any, ann: any, pdfW: number, pdfH: number, rot: number): void {
   const { r, g, b } = hexToRgb01(ann.color);
   const [px, py] = toPdfCoords(ann.x, ann.y, pdfW, pdfH, rot);
   const boxH = ann.fontSize * 2 + 4;
@@ -183,7 +178,7 @@ function _addFreeTextAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
   _appendAnnotation(pdfPage, annotDict);
 }
 
-function _addLineAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
+function _addLineAnnotation(pdfDoc: any, pdfPage: any, ann: any, pdfW: number, pdfH: number, rot: number): void {
   const { r, g, b } = hexToRgb01(ann.color);
   const [x1, y1] = toPdfCoords(ann.x1, ann.y1, pdfW, pdfH, rot);
   const [x2, y2] = toPdfCoords(ann.x2, ann.y2, pdfW, pdfH, rot);
@@ -200,7 +195,7 @@ function _addLineAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
   _appendAnnotation(pdfPage, annotDict);
 }
 
-function _addArrowAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
+function _addArrowAnnotation(pdfDoc: any, pdfPage: any, ann: any, pdfW: number, pdfH: number, rot: number): void {
   const { r, g, b } = hexToRgb01(ann.color);
   const [x1, y1] = toPdfCoords(ann.x1, ann.y1, pdfW, pdfH, rot);
   const [x2, y2] = toPdfCoords(ann.x2, ann.y2, pdfW, pdfH, rot);
@@ -218,7 +213,7 @@ function _addArrowAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
   _appendAnnotation(pdfPage, annotDict);
 }
 
-function _addSquareAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
+function _addSquareAnnotation(pdfDoc: any, pdfPage: any, ann: any, pdfW: number, pdfH: number, rot: number): void {
   const { r, g, b } = hexToRgb01(ann.color);
   const [x1, y1] = toPdfCoords(ann.x1, ann.y1, pdfW, pdfH, rot);
   const [x2, y2] = toPdfCoords(ann.x2, ann.y2, pdfW, pdfH, rot);
@@ -233,7 +228,7 @@ function _addSquareAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
   _appendAnnotation(pdfPage, annotDict);
 }
 
-function _addCircleAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
+function _addCircleAnnotation(pdfDoc: any, pdfPage: any, ann: any, pdfW: number, pdfH: number, rot: number): void {
   const { r, g, b } = hexToRgb01(ann.color);
   const [x1, y1] = toPdfCoords(ann.x1, ann.y1, pdfW, pdfH, rot);
   const [x2, y2] = toPdfCoords(ann.x2, ann.y2, pdfW, pdfH, rot);
@@ -248,7 +243,7 @@ function _addCircleAnnotation(pdfDoc, pdfPage, ann, pdfW, pdfH, rot) {
   _appendAnnotation(pdfPage, annotDict);
 }
 
-function _appendAnnotation(pdfPage, annotDict) {
+function _appendAnnotation(pdfPage: any, annotDict: any): void {
   const ref    = pdfPage.doc.context.register(annotDict);
   const annots = pdfPage.node.get(PDFName.of('Annots'));
   if (annots instanceof PDFArray) {
