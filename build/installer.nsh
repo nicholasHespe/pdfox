@@ -5,12 +5,31 @@
 ; The ProgID "PDF Document" matches the name field in package.json fileAssociations,
 ; which is what electron-builder passes to APP_ASSOCIATE as the FILECLASS.
 
-; ----- Finish page checkbox -----------------------------------------------
+; ----- Finish page ---------------------------------------------------------
+; customFinishPage REPLACES the entire finish block (it's an !if/!else against
+; MUI_PAGE_FINISH in assistedInstaller.nsh), so we must reproduce the standard
+; "Launch Reamlet" checkbox and call !insertmacro MUI_PAGE_FINISH ourselves.
 !macro customFinishPage
+  !ifndef HIDE_RUN_AFTER_FINISH
+    Function StartApp
+      ${if} ${isUpdated}
+        StrCpy $1 "--updated"
+      ${else}
+        StrCpy $1 ""
+      ${endif}
+      ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$1"
+    FunctionEnd
+
+    !define MUI_FINISHPAGE_RUN
+    !define MUI_FINISHPAGE_RUN_FUNCTION "StartApp"
+  !endif
+
   !define MUI_FINISHPAGE_SHOWREADME ""
   !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
   !define MUI_FINISHPAGE_SHOWREADME_TEXT "Set Reamlet as the default PDF viewer"
   !define MUI_FINISHPAGE_SHOWREADME_FUNCTION SetAsDefaultPDF
+
+  !insertmacro MUI_PAGE_FINISH
 !macroend
 
 ; ----- Register with Windows Default Programs on install ------------------
