@@ -1,13 +1,14 @@
-// PDFox — annotation layer
+// Reamlet — annotation layer
 // Manages canvas overlays per page and stores annotation objects in memory.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { PDFViewer, PageData } from './viewer.js';
+import type { Annotation, ShapeAnnotation, HighlightAnnotation, TextAnnotation } from './types.js';
 
 export class Annotator {
   pages: PageData[];
   viewer: PDFViewer | null;
-  annotations: any[];
+  annotations: Annotation[];
   tool: string;
   color: string;
   thickness: number;
@@ -23,7 +24,7 @@ export class Annotator {
   _selectedIdx: number | null;
   _selectedPageNum: number | null;
   _dragStart: { x: number; y: number } | null;
-  _dragOrigAnn: any;           // deep copy of annotation — untyped until Annotation union is defined
+  _dragOrigAnn: Annotation | null;
   _dragPageRect: DOMRect | null;
   _history: string[];
   _histIdx: number;
@@ -281,7 +282,7 @@ export class Annotator {
         if (Math.abs(x2 - x1) > 2 || Math.abs(y2 - y1) > 2) {
           const w = canvas.width, h = canvas.height;
           this.annotations.push({
-            type: this.tool, pageNum,
+            type: this.tool as ShapeAnnotation['type'], pageNum,
             x1: x1 / w, y1: y1 / h,
             x2: x2 / w, y2: y2 / h,
             color:     this.color,
@@ -447,7 +448,7 @@ export class Annotator {
     sel.removeAllRanges();
     if (rects.length === 0) return;
 
-    const annot = { type: 'highlight', pageNum, rects, color: this.color };
+    const annot: HighlightAnnotation = { type: 'highlight', pageNum, rects, color: this.color };
     this.annotations.push(annot);
     this._pushHistory();
     const ctx = p.annotCanvas.getContext('2d')!;
@@ -470,7 +471,7 @@ export class Annotator {
       fontSize, weight, decor, color: this.color,
       onCommit: (text) => {
         if (!text) return;
-        const annot = {
+        const annot: TextAnnotation = {
           type: 'text', pageNum,
           x: cx / w, y: cy / h,
           text,
@@ -500,6 +501,7 @@ export class Annotator {
     this._selectedIdx = null;
     this._redrawPage(p, pageNum);
 
+    if (ann.type !== 'text') return; // _editTextBox is only called on text annotations
     const weight = ann.bold      ? 'bold'      : 'normal';
     const decor  = ann.underline ? 'underline' : 'none';
 
@@ -580,14 +582,14 @@ export class Annotator {
     return -1;
   }
 
-  _annotContains(a: any, nx: number, ny: number) {
+  _annotContains(a: Annotation, nx: number, ny: number) {
     const tol = 0.015;
     if (a.type === 'draw' || a.type === 'freeHighlight') {
       for (let i = 0; i < a.points.length - 1; i++) {
         if (this._distToSegment(nx, ny, a.points[i], a.points[i + 1]) < tol) return true;
       }
     } else if (a.type === 'highlight') {
-      return a.rects.some((r: any) =>
+      return a.rects.some(r =>
         nx >= r.x - tol && nx <= r.x + r.width  + tol &&
         ny >= r.y - tol && ny <= r.y + r.height + tol
       );
@@ -632,31 +634,31 @@ export class Annotator {
     if (had && redraw) this.redrawAll();
   }
 
-  _moveAnnotation(ann: any, dx: number, dy: number) {
+  _moveAnnotation(ann: Annotation, dx: number, dy: number) {
     if (ann.type === 'draw' || ann.type === 'freeHighlight') {
       ann.points = ann.points.map(([x, y]: [number, number]) => [x + dx, y + dy]);
     } else if (ann.type === 'highlight') {
-      ann.rects = ann.rects.map((r: any) => ({ ...r, x: r.x + dx, y: r.y + dy }));
+      ann.rects = ann.rects.map(r => ({ ...r, x: r.x + dx, y: r.y + dy }));
     } else if (ann.type === 'text') {
       ann.x += dx; ann.y += dy;
-    } else if (['rect', 'oval', 'line', 'arrow'].includes(ann.type)) {
+    } else if (ann.type === 'rect' || ann.type === 'oval' || ann.type === 'line' || ann.type === 'arrow') {
       ann.x1 += dx; ann.y1 += dy;
       ann.x2 += dx; ann.y2 += dy;
     }
   }
 
-  _getAnnotBounds(ann: any, w: number, h: number) {
+  _getAnnotBounds(ann: Annotation, w: number, h: number) {
     if (ann.type === 'draw' || ann.type === 'freeHighlight') {
       const xs = ann.points.map(([nx]: [number, number]) => nx * w);
       const ys = ann.points.map(([, ny]: [number, number]) => ny * h);
       return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
     } else if (ann.type === 'highlight') {
-      const allX = ann.rects.flatMap((r: any) => [r.x * w, (r.x + r.width) * w]);
-      const allY = ann.rects.flatMap((r: any) => [r.y * h, (r.y + r.height) * h]);
+      const allX = ann.rects.flatMap(r => [r.x * w, (r.x + r.width) * w]);
+      const allY = ann.rects.flatMap(r => [r.y * h, (r.y + r.height) * h]);
       return { x: Math.min(...allX), y: Math.min(...allY), w: Math.max(...allX) - Math.min(...allX), h: Math.max(...allY) - Math.min(...allY) };
     } else if (ann.type === 'text') {
       return { x: ann.x * w - 2, y: ann.y * h - ann.fontSize - 2, w: 120, h: ann.fontSize * 2 + 4 };
-    } else if (['rect', 'oval', 'line', 'arrow'].includes(ann.type)) {
+    } else if (ann.type === 'rect' || ann.type === 'oval' || ann.type === 'line' || ann.type === 'arrow') {
       const x1 = Math.min(ann.x1, ann.x2) * w, x2 = Math.max(ann.x1, ann.x2) * w;
       const y1 = Math.min(ann.y1, ann.y2) * h, y2 = Math.max(ann.y1, ann.y2) * h;
       return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
@@ -746,7 +748,7 @@ export class Annotator {
     }
   }
 
-  _drawSelectionIndicator(ctx: CanvasRenderingContext2D, ann: any, w: number, h: number) {
+  _drawSelectionIndicator(ctx: CanvasRenderingContext2D, ann: Annotation, w: number, h: number) {
     const b = this._getAnnotBounds(ann, w, h);
     if (!b) return;
     const pad = 5;
@@ -759,7 +761,7 @@ export class Annotator {
     ctx.restore();
   }
 
-  _drawAnnotation(ctx: CanvasRenderingContext2D, annot: any, w: number, h: number) {
+  _drawAnnotation(ctx: CanvasRenderingContext2D, annot: Annotation, w: number, h: number) {
     ctx.save();
     if (annot.type === 'draw') {
       ctx.strokeStyle = annot.color;
@@ -789,7 +791,7 @@ export class Annotator {
     } else if (annot.type === 'highlight') {
       ctx.globalAlpha = 0.35;
       ctx.fillStyle   = annot.color;
-      annot.rects.forEach((r: any) => {
+      annot.rects.forEach(r => {
         ctx.fillRect(r.x * w, r.y * h, r.width * w, r.height * h);
       });
 
@@ -807,7 +809,7 @@ export class Annotator {
         }
       });
 
-    } else if (['line', 'rect', 'oval', 'arrow'].includes(annot.type)) {
+    } else if (annot.type === 'line' || annot.type === 'rect' || annot.type === 'oval' || annot.type === 'arrow') {
       ctx.strokeStyle = annot.color;
       ctx.lineWidth   = annot.thickness;
       ctx.lineCap     = 'round';

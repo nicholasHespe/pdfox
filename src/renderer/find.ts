@@ -1,10 +1,19 @@
-// PDFox — Find bar (Ctrl+F)
+// Reamlet — Find bar (Ctrl+F)
 // Searches text content across pages/tabs with exact, wildcard, and fuzzy modes.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// @ts-ignore — pdfjs-dist is imported via direct path for Electron's file:// ESM loader
-import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
+// @ts-expect-error — pdfjs-dist is imported via direct path for Electron's file:// ESM loader
+import * as _pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
+import type * as PDFJSLib from 'pdfjs-dist';
 import type { Tab, Match } from './types.js';
+
+/** A PDF.js text content item that carries an actual string (vs a marked-content marker). */
+interface TextContentItem {
+  str: string; transform: number[]; width: number; height: number;
+}
+
+// Cast to the pdfjs-dist type surface so all downstream code is fully typed
+const pdfjsLib = _pdfjsLib as unknown as typeof PDFJSLib;
 
 // ── Utilities ───────────────────────────────────────────────────
 
@@ -92,7 +101,7 @@ export class FindBar {
 
     this._input.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); this.close(); return; }
-      if (e.key === 'Enter')  { e.preventDefault(); e.shiftKey ? this._navigate(-1) : this._navigate(1); }
+      if (e.key === 'Enter')  { e.preventDefault(); if (e.shiftKey) { this._navigate(-1); } else { this._navigate(1); } }
     });
 
     this._prev.addEventListener('click', () => this._navigate(-1));
@@ -182,7 +191,7 @@ export class FindBar {
     if (!tab._findCache) tab._findCache = new Map();
 
     let pdfDoc  = tab.viewer.pdfDoc;
-    let tempDoc = null;
+    let tempDoc: import('pdfjs-dist').PDFDocumentProxy | null = null;
 
     if (!pdfDoc) {
       tempDoc = await pdfjsLib.getDocument({ data: tab.pdfBytes.slice() }).promise;
@@ -195,9 +204,9 @@ export class FindBar {
       const page = await pdfDoc.getPage(p);
       const tc   = await page.getTextContent();
       tab._findCache.set(p, {
-        items: tc.items
-          .filter((item: any) => item.str)
-          .map((item: any) => ({
+        items: (tc.items as unknown[])
+          .filter((item): item is TextContentItem => typeof item === 'object' && item !== null && 'str' in item)
+          .map(item => ({
             str:    item.str,
             x:      item.transform[4],
             y:      item.transform[5],

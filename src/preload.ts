@@ -1,4 +1,4 @@
-// PDFox — preload script
+// Reamlet — preload script
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 'use strict';

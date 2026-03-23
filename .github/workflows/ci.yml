@@ -1,0 +1,179 @@
+# ───────────────────────────────────────────────────────────────
+#  Reamlet CI — lint, type-check, and build on every push / PR
+# ───────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─────────────────────────────────────────────────────────────
+#  Shared setup
+# ─────────────────────────────────────────────────────────────
+
+jobs:
+  # ──────────────────────────────
+  #  Linter
+  # ──────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Run ESLint on the src/ directory
+      # Why just src/? The renderer/ folder is plain JS/HTML that
+      # isn't part of the TypeScript project — lint what you own.
+      - name: Lint
+        run: pnpm exec eslint src/
+
+  # ──────────────────────────────
+  #  Type-check
+  # ──────────────────────────────
+  typecheck:
+    name: Type-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check (main process)
+        run: pnpm exec tsc -p tsconfig.main.json --noEmit
+
+      - name: Type-check (renderer process)
+        run: pnpm exec tsc -p tsconfig.renderer.json --noEmit
+
+  # ──────────────────────────────
+  #  Build 
+  # ──────────────────────────────
+
+  # Linux smoke test (fast, cheap — catches most packaging bugs)
+  build-linux:
+    name: Build (Linux)
+    needs: [lint, typecheck]          # Only if lint + types pass
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile TypeScript
+        run: pnpm run build
+
+      - name: Package Electron app
+        run: pnpm exec electron-builder --linux dir
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Windows build — the real deal for your target platform
+  build-windows:
+    name: Build (Windows)
+    needs: [lint, typecheck]
+    runs-on: windows-latest           # Windows runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile TypeScript
+        run: pnpm run build
+
+      # Build the NSIS installer + portable exe — same as your
+      # local "pnpm run build-win" but on a clean machine.
+      # This catches Windows-specific issues like path separators,
+      # icon formats, and NSIS config problems.
+      - name: Package Windows installer + portable
+        run: pnpm exec electron-builder --win nsis portable --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Upload the built artifacts so you can download and test
+      # them directly from the Actions tab — no local build needed.
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/*.exe
+          retention-days: 7           # Auto-delete after a week

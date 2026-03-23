@@ -1,10 +1,65 @@
-// PDFox — shared renderer types
+// Reamlet — shared renderer types
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { PDFViewer } from './viewer.js';
 import type { Annotator } from './annotator.js';
 
-// ── Tab ───────────────────────────────────────────────────────────
+/** PDF outline node — mirrors the shape returned by PDFDocumentProxy.getOutline(). */
+export interface OutlineNode {
+  title: string;
+  bold: boolean;
+  italic: boolean;
+  dest: string | unknown[] | null;
+  url: string | null;
+  unsafeUrl: string | undefined;
+  newWindow: boolean | undefined;
+  count: number | undefined;
+  items: OutlineNode[];
+}
+
+// ── Annotation shapes ─────────────────────────────────────────
+
+export interface DrawAnnotation {
+  type: 'draw' | 'freeHighlight';
+  pageNum: number;
+  points: [number, number][];
+  color: string;
+  thickness: number;
+}
+
+export interface HighlightAnnotation {
+  type: 'highlight';
+  pageNum: number;
+  rects: { x: number; y: number; width: number; height: number }[];
+  color: string;
+}
+
+export interface TextAnnotation {
+  type: 'text';
+  pageNum: number;
+  x: number;
+  y: number;
+  color: string;
+  fontSize: number;
+  bold: boolean;
+  underline: boolean;
+  text: string;
+}
+
+export interface ShapeAnnotation {
+  type: 'line' | 'arrow' | 'rect' | 'oval';
+  pageNum: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  thickness: number;
+}
+
+export type Annotation = DrawAnnotation | HighlightAnnotation | TextAnnotation | ShapeAnnotation;
+
+// ── Tab ───────────────────────────────────────────────────────
 
 interface FindCacheEntry {
   items: { str: string; x: number; y: number; width: number; height: number }[];
@@ -16,7 +71,7 @@ export interface Tab {
   pdfBytes: Uint8Array;
   viewer: PDFViewer;
   annotator: Annotator | null;
-  outline: any[] | null;       // pdfjs outline array — no public type available
+  outline: OutlineNode[] | null;
   pane: HTMLDivElement;
   dirty: boolean;
   tabEl: HTMLElement | null;
@@ -26,21 +81,21 @@ export interface Tab {
 
   // Transient fields — set during tab lifecycle, absent until first use
   _savedScrollTop?: number | null;
-  _savedAnnotations?: any[] | null;
+  _savedAnnotations?: Annotation[] | null;
   _suggestedDir?: string | null;
   _suggestedName?: string | null;
   _savedBytes?: Uint8Array | null;
   _findCache?: Map<number, FindCacheEntry>;
 }
 
-// ── CloseContext ──────────────────────────────────────────────────
+// ── CloseContext ──────────────────────────────────────────────
 
 export type CloseContext =
   | { type: 'window' }
   | { type: 'tab'; tab: Tab }
   | null;
 
-// ── Find / Match ──────────────────────────────────────────────────
+// ── Find / Match ──────────────────────────────────────────────
 
 export interface Match {
   tabId: number;

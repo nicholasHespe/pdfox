@@ -1,14 +1,31 @@
-// PDFox — PDF.js viewer wrapper
+// Reamlet — PDF.js viewer wrapper
 // Handles loading, rendering, zoom, rotation and viewport exposure.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// @ts-ignore — pdfjs-dist is imported via direct path for Electron's file:// ESM loader
-import * as pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
+// @ts-expect-error — pdfjs-dist is imported via direct path for Electron's file:// ESM loader
+import * as _pdfjsLib from '../../node_modules/pdfjs-dist/build/pdf.mjs';
+import type * as PDFJSLib from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist';
+
+// Cast to the pdfjs-dist type surface so all downstream code is fully typed
+const pdfjsLib = _pdfjsLib as unknown as typeof PDFJSLib;
 const { TextLayer } = pdfjsLib;
 
 // Point the worker at the bundled worker file
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   new URL('../../node_modules/pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+
+/** Subset of PDF.js annotation data we consume for interactive form-field rendering. */
+interface PDFFormAnnotation {
+  subtype: string;
+  fieldType?: string;
+  fieldFlags?: number;
+  rect?: [number, number, number, number];
+  fieldName?: string;
+  fieldValue?: string;
+  multiLine?: boolean;
+  options?: { exportValue: string; displayValue?: string }[];
+}
 
 export interface PageData {
   wrapper: HTMLDivElement;
@@ -21,13 +38,13 @@ export interface PageData {
 
 export class PDFViewer {
   container: HTMLElement;
-  pdfDoc: any;
+  pdfDoc: PDFDocumentProxy | null;
   scale: number;
   pages: PageData[];
   pageRotations: Record<number, number>;
   pageBaseRotations: Record<number, number>;
-  fieldValues: Record<string, any>;
-  _annCache: Record<number, any[]>;
+  fieldValues: Record<string, string | boolean>;
+  _annCache: Record<number, PDFFormAnnotation[]>;
   _pendingRender: Set<number>;
   _io: IntersectionObserver | null;
   _pageSizeCache: Record<number, { width: number; height: number }>;
@@ -75,7 +92,7 @@ export class PDFViewer {
 
     await this.pdfDoc?.destroy();
     const loadingTask = pdfjsLib.getDocument({ data: dataCopy });
-    this.pdfDoc = await loadingTask.promise;
+    this.pdfDoc = await loadingTask.promise as PDFDocumentProxy;
     this.isSleeping  = false;
     this.pages       = [];
     this._annCache   = {};
@@ -85,7 +102,7 @@ export class PDFViewer {
 
     // Phase 1 — create sized placeholders for every page so layout/scrollbars
     // are correct before any rendering begins.
-    for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+    for (let i = 1; i <= this.pdfDoc!.numPages; i++) {
       await this._createPagePlaceholder(i);
     }
 
@@ -110,7 +127,7 @@ export class PDFViewer {
     const pane         = this.container.parentElement;
     const renderHeight = (pane ? pane.clientHeight : 800) * 10;
     let   accumulated  = 0;
-    for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+    for (let i = 1; i <= this.pdfDoc!.numPages; i++) {
       if (accumulated < renderHeight) {
         this._pendingRender.delete(i); // won't be deferred
         await this._renderPage(i);
@@ -132,7 +149,7 @@ export class PDFViewer {
     // First pass: render pages visible at the OLD layout, resize everything else.
     const visibleSet = this._getVisibleSet();
 
-    for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+    for (let i = 1; i <= this.pdfDoc!.numPages; i++) {
       if (visibleSet.has(i)) {
         await this._renderPage(i);
       } else {
@@ -158,12 +175,12 @@ export class PDFViewer {
   // Visible pages are rendered immediately; off-screen pages are resized and
   // queued for deferred rendering via the IntersectionObserver.
   async rotateAll(delta: number): Promise<void> {
-    for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+    for (let i = 1; i <= this.pdfDoc!.numPages; i++) {
       this.pageRotations[i] = ((this.pageRotations[i] || 0) + delta + 360) % 360;
     }
 
     const visibleSet = this._getVisibleSet();
-    for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+    for (let i = 1; i <= this.pdfDoc!.numPages; i++) {
       if (visibleSet.has(i)) {
         await this._renderPage(i);
       } else {
@@ -209,8 +226,8 @@ export class PDFViewer {
   }
 
   // Returns the PDF.js viewport for a given 1-based page number (includes user rotation)
-  async getViewport(pageNum: number): Promise<any> {
-    const page     = await this.pdfDoc.getPage(pageNum);
+  async getViewport(pageNum: number): Promise<PageViewport> {
+    const page     = await this.pdfDoc!.getPage(pageNum);
     const rotation = (page.rotate + (this.pageRotations[pageNum] || 0)) % 360;
     return page.getViewport({ scale: this.scale, rotation });
   }
@@ -219,7 +236,7 @@ export class PDFViewer {
   // Results are cached so this works even while the viewer is sleeping (pdfDoc is null).
   async getPageSize(pageNum: number): Promise<{ width: number; height: number }> {
     if (this._pageSizeCache[pageNum]) return this._pageSizeCache[pageNum];
-    const page = await this.pdfDoc.getPage(pageNum);
+    const page = await this.pdfDoc!.getPage(pageNum);
     const vp   = page.getViewport({ scale: 1.0 });
     const size = { width: vp.width, height: vp.height };
     this._pageSizeCache[pageNum] = size;
@@ -233,24 +250,27 @@ export class PDFViewer {
   }
 
   // Resolve an outline destination (string or array) to a 1-based page number
-  async resolveOutlineDest(dest: any): Promise<number | null> {
+  async resolveOutlineDest(dest: string | unknown[]): Promise<number | null> {
     if (!dest) return null;
-    let explicitDest = dest;
+     
+    let explicitDest: unknown[] | null = Array.isArray(dest) ? dest : null;
     if (typeof dest === 'string') {
-      explicitDest = await this.pdfDoc.getDestination(dest);
+       
+      explicitDest = await this.pdfDoc!.getDestination(dest);
     }
     if (!Array.isArray(explicitDest) || !explicitDest[0]) return null;
-    const pageIndex = await this.pdfDoc.getPageIndex(explicitDest[0]);
+     
+    const pageIndex = await this.pdfDoc!.getPageIndex(explicitDest[0] as { num: number; gen: number });
     return pageIndex + 1;
   }
 
   get pageCount() {
-    return this.pdfDoc ? this.pdfDoc.numPages : 0;
+    return this.pdfDoc ? this.pdfDoc!.numPages : 0;
   }
 
   // Render a page thumbnail at a small scale; returns a data URL (JPEG)
   async renderThumbnail(pageNum: number, scale = 0.4): Promise<string> {
-    const page     = await this.pdfDoc.getPage(pageNum);
+    const page     = await this.pdfDoc!.getPage(pageNum);
     const viewport = page.getViewport({ scale });
     const canvas   = document.createElement('canvas');
     canvas.width   = viewport.width;
@@ -343,7 +363,7 @@ export class PDFViewer {
   // PDF.js render pipeline.  This is used during load() so every page has the
   // right dimensions for layout / scrollbar accuracy before we start rendering.
   async _createPagePlaceholder(pageNum: number): Promise<void> {
-    const page     = await this.pdfDoc.getPage(pageNum);
+    const page     = await this.pdfDoc!.getPage(pageNum);
     const userRot  = this.pageRotations[pageNum] || 0;
     this.pageBaseRotations[pageNum] = page.rotate;
 
@@ -390,7 +410,7 @@ export class PDFViewer {
 
   async _renderPage(pageNum: number): Promise<void> {
     this._pendingRender.delete(pageNum);
-    const page     = await this.pdfDoc.getPage(pageNum);
+    const page     = await this.pdfDoc!.getPage(pageNum);
     const userRot  = this.pageRotations[pageNum] || 0;
     this.pageBaseRotations[pageNum] = page.rotate; // store for saver
 
@@ -404,18 +424,18 @@ export class PDFViewer {
     const viewport = page.getViewport({ scale: this.scale, rotation });
     const idx      = pageNum - 1;
 
-    let wrapper, canvas, textDiv, annotCanvas, formLayer;
+    let wrapper, canvas, textDiv, annotCanvas;
 
     if (this.pages[idx]) {
-      // Re-use existing DOM elements on zoom/rotate
-      ({ wrapper, canvas, textDiv, annotCanvas, formLayer } = this.pages[idx]);
+      // Re-use existing DOM elements on zoom/rotate (formLayer not needed — passed via this.pages[idx])
+      ({ wrapper, canvas, textDiv, annotCanvas } = this.pages[idx]);
       this.pages[idx].viewportTransform = viewport.transform;
     } else {
       wrapper     = document.createElement('div');
       canvas      = document.createElement('canvas');
       textDiv     = document.createElement('div');
       annotCanvas = document.createElement('canvas');
-      formLayer   = document.createElement('div');
+      const formLayer = document.createElement('div');
 
       wrapper.className     = 'page-wrapper';
       canvas.className      = 'pdf-canvas';
@@ -462,26 +482,31 @@ export class PDFViewer {
 
   // ── Form field overlay ──────────────────────────────────────
 
-  async _renderFormFields(pageNum: number, page: any, viewport: any, pageData: PageData): Promise<void> {
+  async _renderFormFields(pageNum: number, page: PDFPageProxy, viewport: PageViewport, pageData: PageData): Promise<void> {
     const fl = pageData.formLayer;
 
     // Save any current values before rebuilding the layer
-    fl.querySelectorAll('[data-field-name]').forEach((el: any) => {
-      const name = el.dataset.fieldName;
-      if (name) this.fieldValues[name] = el.type === 'checkbox' ? el.checked : el.value;
+    fl.querySelectorAll('[data-field-name]').forEach((el) => {
+      const name = (el as HTMLElement).dataset.fieldName;
+      if (!name) return;
+      if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+        this.fieldValues[name] = el.checked;
+      } else {
+        this.fieldValues[name] = (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
+      }
     });
     fl.innerHTML = '';
 
     // Cache annotations per page so repeated re-renders (zoom/rotate) are fast
     if (!this._annCache[pageNum]) {
-      this._annCache[pageNum] = await page.getAnnotations();
+      this._annCache[pageNum] = await page.getAnnotations() as unknown as PDFFormAnnotation[];
     }
     const annotations = this._annCache[pageNum];
 
     for (const ann of annotations) {
       if (ann.subtype !== 'Widget' || !ann.fieldType || !ann.rect) continue;
       // PDF spec (1-based): bit 15 = 0x4000 radio, bit 16 = 0x8000 push-button
-      if (ann.fieldType === 'Btn' && (ann.fieldFlags & (0x4000 | 0x8000))) continue;
+      if (ann.fieldType === 'Btn' && ((ann.fieldFlags ?? 0) & (0x4000 | 0x8000))) continue;
 
       // Convert PDF user-space rect to viewport (CSS-pixel) coordinates
       const [vx1, vy1] = viewport.convertToViewportPoint(ann.rect[0], ann.rect[1]);
@@ -491,44 +516,53 @@ export class PDFViewer {
       const width  = Math.abs(vx2 - vx1);
       const height = Math.abs(vy2 - vy1);
 
-      const fieldName  = ann.fieldName || '';
-      const savedValue = this.fieldValues[fieldName];
+      const fieldName  = ann.fieldName ?? '';
+      const savedValue = fieldName in this.fieldValues ? this.fieldValues[fieldName] : undefined;
 
-      let el: any;
+      let el!: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      let isCheckbox = false;
 
       if (ann.fieldType === 'Tx') {
-        el = ann.multiLine ? document.createElement('textarea') : document.createElement('input');
-        if (el.tagName === 'INPUT') el.type = 'text';
-        el.value     = savedValue !== undefined ? savedValue : (ann.fieldValue || '');
-        el.className = 'form-field form-text';
-
+        if (ann.multiLine) {
+          const ta = document.createElement('textarea');
+          ta.value     = savedValue != null ? String(savedValue) : (ann.fieldValue ?? '');
+          ta.className = 'form-field form-text';
+          el = ta;
+        } else {
+          const inp = document.createElement('input');
+          inp.type     = 'text';
+          inp.value    = savedValue != null ? String(savedValue) : (ann.fieldValue ?? '');
+          inp.className = 'form-field form-text';
+          el = inp;
+        }
       } else if (ann.fieldType === 'Btn') {
         // Checkbox
-        el          = document.createElement('input');
-        el.type     = 'checkbox';
-        el.className = 'form-field form-checkbox';
-        const defaultOn = ann.fieldValue && ann.fieldValue !== 'Off';
-        el.checked  = savedValue !== undefined ? !!savedValue : defaultOn;
-
+        const checkbox = document.createElement('input');
+        checkbox.type      = 'checkbox';
+        checkbox.className = 'form-field form-checkbox';
+        const defaultOn    = Boolean(ann.fieldValue) && ann.fieldValue !== 'Off';
+        checkbox.checked   = savedValue != null ? Boolean(savedValue) : defaultOn;
+        el = checkbox;
+        isCheckbox = true;
       } else if (ann.fieldType === 'Ch') {
         // Dropdown / list box
-        el = document.createElement('select');
-        el.className = 'form-field form-select';
-        (ann.options || []).forEach((opt: any) => {
+        const sel = document.createElement('select');
+        sel.className = 'form-field form-select';
+        (ann.options ?? []).forEach(opt => {
           const o = document.createElement('option');
           o.value       = opt.exportValue;
-          o.textContent = opt.displayValue || opt.exportValue;
-          el.appendChild(o);
+          o.textContent = opt.displayValue ?? opt.exportValue;
+          sel.appendChild(o);
         });
-        el.value = savedValue !== undefined ? savedValue : (ann.fieldValue || '');
-
+        sel.value = savedValue != null ? String(savedValue) : (ann.fieldValue ?? '');
+        el = sel;
       } else {
         continue;
       }
 
       el.dataset.fieldName = fieldName;
 
-      if (el.type === 'checkbox') {
+      if (isCheckbox) {
         // Centre checkbox within the field rect; keep browser-native size
         const size = Math.round(Math.min(width, height, 18));
         const cx   = left + (width  - size) / 2;
@@ -545,9 +579,11 @@ export class PDFViewer {
 
       // Keep fieldValues in sync as the user types / changes
       el.addEventListener('change', () => {
-        this.fieldValues[fieldName] = el.type === 'checkbox' ? el.checked : el.value;
+        this.fieldValues[fieldName] = isCheckbox
+          ? (el as HTMLInputElement).checked
+          : el.value;
       });
-      if (el.type !== 'checkbox') {
+      if (!isCheckbox) {
         el.addEventListener('input', () => { this.fieldValues[fieldName] = el.value; });
       }
 

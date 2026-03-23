@@ -1,4 +1,4 @@
-// PDFox — Electron main process
+// Reamlet — Electron main process
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 'use strict';
@@ -19,8 +19,8 @@ function createWindow(openFilePath: string | null): BW {
     height: 900,
     minWidth: 640,
     minHeight: 480,
-    title: 'PDFox',
-    icon: path.join(__dirname, '..', 'assets', 'pdfox_logo.png'),
+    title: 'Reamlet',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     backgroundColor: '#1e1e1e',
     // Mac: use native traffic lights with hidden titlebar; Windows: fully custom frame
     ...(isMac
@@ -51,7 +51,7 @@ function createWindow(openFilePath: string | null): BW {
           filePath: openFilePath,
           buffer:   buffer.buffer,
         });
-      } catch (_) { /* ignore */ }
+      } catch { /* ignore */ }
     });
   }
 
@@ -90,7 +90,7 @@ function buildMenu(): void {
 let _dragIcon: NativeImage | null = null;
 function getDragIcon(): NativeImage {
   if (_dragIcon) return _dragIcon;
-  _dragIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'pdfox_logo.png'));
+  _dragIcon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.png'));
   return _dragIcon!;
 }
 
@@ -144,7 +144,7 @@ ipcMain.handle('save-file-copy', async (event: IpcMainInvokeEvent, arrayBuffer: 
   }
 });
 
-// Open a new PDFox window, optionally pre-loading a file
+// Open a new Reamlet window, optionally pre-loading a file
 ipcMain.handle('open-new-window', (_event: IpcMainInvokeEvent, filePath?: string) => {
   createWindow(filePath || null);
   return { ok: true };
@@ -160,7 +160,7 @@ ipcMain.handle('open-file-from-path', (_event: IpcMainInvokeEvent, filePath: str
   try {
     const buffer = fs.readFileSync(filePath);
     return { filePath, buffer: Buffer.from(buffer) };
-  } catch (_) {
+  } catch {
     return null;
   }
 });
@@ -186,7 +186,7 @@ ipcMain.handle('force-close', (event: IpcMainInvokeEvent) => {
 
 // Custom window controls
 ipcMain.handle('minimize-window',  (event: IpcMainInvokeEvent) => { BrowserWindow.fromWebContents(event.sender)?.minimize();  return { ok: true }; });
-ipcMain.handle('toggle-maximize',  (event: IpcMainInvokeEvent) => { const w = BrowserWindow.fromWebContents(event.sender); if (w) w.isMaximized() ? w.unmaximize() : w.maximize(); return { ok: true }; });
+ipcMain.handle('toggle-maximize',  (event: IpcMainInvokeEvent) => { const w = BrowserWindow.fromWebContents(event.sender); if (w) { if (w.isMaximized()) { w.unmaximize(); } else { w.maximize(); } } return { ok: true }; });
 ipcMain.handle('close-window',     (event: IpcMainInvokeEvent) => { BrowserWindow.fromWebContents(event.sender)?.close();     return { ok: true }; });
 
 // Tell the source window to close the tab that was dragged into another window
@@ -244,7 +244,7 @@ function getArgvFile(argv: string[]): string | null {
   return null;
 }
 
-// Single-instance lock: if another PDFox is already running, forward the
+// Single-instance lock: if another Reamlet is already running, forward the
 // file to it and quit, so the user always ends up with one window.
 const gotLock = app.requestSingleInstanceLock();
 

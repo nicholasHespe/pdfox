@@ -1,11 +1,11 @@
 {
-  "name": "pdfox",
-  "version": "0.2.0",
+  "name": "reamlet",
+  "version": "0.2.1",
   "description": "Lightweight standalone PDF viewer for Windows",
   "main": "out/main.js",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
+    "clean": "node -e \"['out','dist'].forEach(d => require('fs').rmSync(d, { recursive: true, force: true }))\"",
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
     "start": "pnpm run build && electron out/main.js",
     "dist": "pnpm run build && electron-builder --win portable",
@@ -17,35 +17,55 @@
     "pdfjs-dist": "^4.4.168"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.0.0",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
+    "eslint": "^10.1.0",
+    "globals": "^17.4.0",
+    "jiti": "^2.6.1",
     "typescript": "^5.5.0",
-    "@types/node": "^20.0.0"
+    "typescript-eslint": "^8.57.1"
   },
   "build": {
-    "appId": "com.pdfox.app",
-    "productName": "PDFox",
+    "appId": "com.reamlet.app",
+    "productName": "Reamlet",
     "fileAssociations": [
       {
         "ext": "pdf",
         "name": "PDF Document",
-        "description": "Open with PDFox",
+        "description": "Open with Reamlet",
         "role": "Viewer",
-        "icon": "assets/pdfox_logo.ico"
+        "icon": "assets/icon.ico"
       }
     ],
     "win": {
-      "icon": "assets/pdfox_logo.ico",
+      "icon": "assets/icon.ico",
       "target": [
-        { "target": "nsis",     "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "mac": {
-      "icon": "assets/pdfox_logo.icns",
+      "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
-        { "target": "dmg", "arch": ["universal"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -64,7 +84,9 @@
     ]
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron"]
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
   },
   "license": "GPL-3.0-or-later"
 }
