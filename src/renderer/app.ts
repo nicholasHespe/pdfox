@@ -4,8 +4,11 @@
 import { PDFViewer }        from './viewer.js';
 import { Annotator }        from './annotator.js';
 import { embedAnnotations } from './saver.js';
-// @ts-ignore — pdf-lib is imported via direct path for Electron's file:// ESM loader
-import { PDFDocument }      from '../../node_modules/pdf-lib/dist/pdf-lib.esm.js';
+// @ts-expect-error — pdf-lib is imported via direct path for Electron's file:// ESM loader
+import * as _pdfLib       from '../../node_modules/pdf-lib/dist/pdf-lib.esm.js';
+import type * as PDFLibNS from 'pdf-lib';
+import type { OutlineNode } from './types.js';
+const { PDFDocument } = _pdfLib as unknown as typeof PDFLibNS;
 import { FindBar }          from './find.js';
 import type { Tab, CloseContext } from './types.js';
 
@@ -895,7 +898,7 @@ function jumpToPage(pageNum: number) {
 
 // ── Table of Contents ──────────────────────────────────────────
 
-function renderToc(outline: any) {
+function renderToc(outline: OutlineNode[] | null) {
   tocTree.innerHTML = '';
   if (!outline || outline.length === 0) {
     tocPanel.classList.add('hidden');
@@ -909,7 +912,7 @@ function renderToc(outline: any) {
   _positionScrollbar();
 }
 
-function _buildTocNodes(items: any[], container: HTMLElement) {
+function _buildTocNodes(items: OutlineNode[], container: HTMLElement) {
   for (const item of items) {
     const hasChildren = item.items && item.items.length > 0;
     const node = document.createElement('div');
@@ -948,9 +951,11 @@ function _buildTocNodes(items: any[], container: HTMLElement) {
   }
 }
 
-async function _navigateToOutlineItem(item: any) {
+async function _navigateToOutlineItem(item: OutlineNode) {
   if (!activeTab) return;
-  const pageNum = await activeTab.viewer.resolveOutlineDest(item.dest || item.url);
+  const dest    = item.dest ?? item.url;
+  if (!dest) return;
+  const pageNum = await activeTab.viewer.resolveOutlineDest(dest);
   if (pageNum) {
     activeTab.viewer.scrollToPage(pageNum);
     pageInput.value = String(pageNum);
@@ -1125,7 +1130,7 @@ document.querySelectorAll('.titlebar-dropdown').forEach(dropdown => {
     if (!btn) return;
     e.stopPropagation();
     _closeAllDropdowns();
-    (_menuActions as any)[btn.dataset.menu ?? '']?.();
+    (_menuActions as Record<string, (() => void) | undefined>)[btn.dataset.menu ?? '']?.();
   });
 });
 
@@ -1236,7 +1241,7 @@ async function _executeCombine() {
   for (const tab of _combineOrder) {
     const srcDoc = await PDFDocument.load(bytesForTab.get(tab), { ignoreEncryption: true });
     const copied = await resultDoc.copyPages(srcDoc, srcDoc.getPageIndices());
-    copied.forEach((p: any) => resultDoc.addPage(p));
+    copied.forEach(p => resultDoc.addPage(p));
   }
   const bytes = await resultDoc.save();
 
@@ -1278,9 +1283,11 @@ async function _openReorderModal() {
     const idx = siblings.indexOf(th);
     if (dir === -1 && idx === 0) return;
     if (dir ===  1 && idx === siblings.length - 1) return;
-    dir === -1
-      ? container.insertBefore(th, siblings[idx - 1])
-      : siblings[idx + 1].insertAdjacentElement('afterend', th);
+    if (dir === -1) {
+      container.insertBefore(th, siblings[idx - 1]);
+    } else {
+      siblings[idx + 1].insertAdjacentElement('afterend', th);
+    }
     container.querySelectorAll('.reorder-page-num').forEach((s, i) => {
       s.textContent = `Page ${i + 1}`;
     });
@@ -1352,9 +1359,11 @@ async function _openReorderModal() {
       const children = [...container.children];
       const srcIdx   = children.indexOf(srcEl);
       const dstIdx   = children.indexOf(thumb);
-      srcIdx < dstIdx
-        ? thumb.insertAdjacentElement('afterend', srcEl)
-        : thumb.insertAdjacentElement('beforebegin', srcEl);
+      if (srcIdx < dstIdx) {
+        thumb.insertAdjacentElement('afterend', srcEl);
+      } else {
+        thumb.insertAdjacentElement('beforebegin', srcEl);
+      }
 
       container.querySelectorAll('.reorder-page-num').forEach((span, idx) => {
         span.textContent = `Page ${idx + 1}`;
@@ -1377,7 +1386,7 @@ async function _executeReorder() {
   const srcDoc    = await PDFDocument.load(tab.pdfBytes, { ignoreEncryption: true });
   const resultDoc = await PDFDocument.create();
   const pages     = await resultDoc.copyPages(srcDoc, newOrder);
-  pages.forEach((p: any) => resultDoc.addPage(p));
+  pages.forEach(p => resultDoc.addPage(p));
   const bytes = await resultDoc.save();
 
   tab.pdfBytes = bytes;

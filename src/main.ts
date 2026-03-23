@@ -51,7 +51,7 @@ function createWindow(openFilePath: string | null): BW {
           filePath: openFilePath,
           buffer:   buffer.buffer,
         });
-      } catch (_) { /* ignore */ }
+      } catch { /* ignore */ }
     });
   }
 
@@ -160,7 +160,7 @@ ipcMain.handle('open-file-from-path', (_event: IpcMainInvokeEvent, filePath: str
   try {
     const buffer = fs.readFileSync(filePath);
     return { filePath, buffer: Buffer.from(buffer) };
-  } catch (_) {
+  } catch {
     return null;
   }
 });
@@ -186,7 +186,7 @@ ipcMain.handle('force-close', (event: IpcMainInvokeEvent) => {
 
 // Custom window controls
 ipcMain.handle('minimize-window',  (event: IpcMainInvokeEvent) => { BrowserWindow.fromWebContents(event.sender)?.minimize();  return { ok: true }; });
-ipcMain.handle('toggle-maximize',  (event: IpcMainInvokeEvent) => { const w = BrowserWindow.fromWebContents(event.sender); if (w) w.isMaximized() ? w.unmaximize() : w.maximize(); return { ok: true }; });
+ipcMain.handle('toggle-maximize',  (event: IpcMainInvokeEvent) => { const w = BrowserWindow.fromWebContents(event.sender); if (w) { if (w.isMaximized()) { w.unmaximize(); } else { w.maximize(); } } return { ok: true }; });
 ipcMain.handle('close-window',     (event: IpcMainInvokeEvent) => { BrowserWindow.fromWebContents(event.sender)?.close();     return { ok: true }; });
 
 // Tell the source window to close the tab that was dragged into another window
