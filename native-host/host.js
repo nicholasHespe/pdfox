@@ -81,10 +81,10 @@ function findReamlet() {
 
   for (const candidate of candidates) {
     try {
-      if (fs.existsSync(candidate)) return candidate;
+      if (fs.existsSync(candidate)) return { found: candidate, checked: candidates };
     } catch { /* ignore */ }
   }
-  return null;
+  return { found: null, checked: candidates };
 }
 
 // ── Message handler ───────────────────────────────────────────
@@ -96,9 +96,9 @@ function handleMessage(msg) {
     return;
   }
 
-  const reamletPath = findReamlet();
+  const { found: reamletPath, checked } = findReamlet();
   if (!reamletPath) {
-    reply({ ok: false, error: 'Reamlet.exe not found' });
+    reply({ ok: false, error: 'Reamlet.exe not found', checked });
     return;
   }
 
