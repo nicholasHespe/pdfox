@@ -106,6 +106,19 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+            echo "name=v${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -115,5 +128,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
           files: artifacts/**
           generate_release_notes: true
