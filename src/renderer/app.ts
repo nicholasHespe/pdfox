@@ -69,6 +69,7 @@ const colorBtn       = document.getElementById('color-btn')!;
 const colorDot       = document.getElementById('color-dot')!;
 const colorPanel     = document.getElementById('color-panel')!;
 const titleFilename  = document.getElementById('title-filename')!;
+const contextMenu    = document.getElementById('context-menu')!;
 
 // ── Platform setup ─────────────────────────────────────────────
 
@@ -172,6 +173,47 @@ colorBtn.addEventListener('click', (e) => {
 // Close colour panel when clicking anywhere else
 document.addEventListener('click', () => colorPanel.classList.add('hidden'));
 colorPanel.addEventListener('click', (e) => e.stopPropagation());
+
+// ── Context menu ───────────────────────────────────────────────
+
+function _hideContextMenu() {
+  contextMenu.classList.add('hidden');
+}
+
+viewerHost.addEventListener('contextmenu', (e) => {
+  if (!activeTab) return;
+  e.preventDefault();
+  contextMenu.classList.remove('hidden');
+  const menuW = contextMenu.offsetWidth  || 140;
+  const menuH = contextMenu.offsetHeight || 90;
+  const left  = Math.min(e.clientX, window.innerWidth  - menuW - 4);
+  const top   = Math.min(e.clientY, window.innerHeight - menuH - 4);
+  contextMenu.style.left = `${Math.max(0, left)}px`;
+  contextMenu.style.top  = `${Math.max(0, top)}px`;
+});
+
+document.addEventListener('mousedown', (e) => {
+  if (!(e.target as Element)?.closest('#context-menu')) _hideContextMenu();
+});
+
+contextMenu.addEventListener('mousedown', (e) => {
+  const btn = (e.target as Element)?.closest('[data-ctx]') as HTMLElement | null;
+  if (!btn) return;
+  e.preventDefault();
+  _hideContextMenu();
+  switch (btn.dataset.ctx) {
+    case 'copy':
+      navigator.clipboard.writeText(window.getSelection()?.toString() ?? '');
+      break;
+    case 'highlight':
+      if (activeTab?.annotator) activeTab.annotator.setTool('highlight');
+      syncToolButtons('highlight');
+      break;
+    case 'find':
+      finder.open();
+      break;
+  }
+});
 
 // ── Resize handles ─────────────────────────────────────────────
 

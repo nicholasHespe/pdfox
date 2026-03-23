@@ -909,6 +909,33 @@ html, body {
   html { overflow: visible; }
 }
 
+/* ── Context menu ─────────────────────────────────────────────── */
+#context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bar-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  padding: 4px;
+  min-width: 140px;
+}
+#context-menu.hidden { display: none; }
+
+#context-menu button {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  text-align: left;
+}
+#context-menu button:hover { background: var(--accent); color: #fff; }
+
 /* ── macOS platform adjustments ───────────────────────────────── */
 /* Hide custom win-controls — native traffic lights are used instead */
 .platform-mac #win-controls { display: none; }
