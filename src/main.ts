@@ -6,15 +6,19 @@
 import type { BrowserWindow as BW, NativeImage, IpcMainInvokeEvent, IpcMainEvent, Event as ElectronEvent } from 'electron';
 
 const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage } = require('electron');
-const path = require('path');
-const fs   = require('fs');
+const path  = require('path');
+const fs    = require('fs');
+const os    = require('os');
+const https = require('https');
+const http  = require('http');
 
 // ── Window factory ─────────────────────────────────────────────
 
 const isMac = process.platform === 'darwin';
 
-function createWindow(openFilePath: string | null): BW {
+function createWindow(openFilePath: string | null, showInactive = false): BW {
   const win = new BrowserWindow({
+    show: false,
     width: 1280,
     height: 900,
     minWidth: 640,
@@ -33,6 +37,11 @@ function createWindow(openFilePath: string | null): BW {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  win.once('ready-to-show', () => {
+    if (showInactive) win.showInactive();
+    else win.show();
   });
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -129,10 +138,13 @@ ipcMain.handle('save-file', async (event: IpcMainInvokeEvent, filePath: string, 
 });
 
 ipcMain.handle('save-file-copy', async (event: IpcMainInvokeEvent, arrayBuffer: ArrayBuffer, defaultPath?: string) => {
-  const win    = BrowserWindow.fromWebContents(event.sender);
+  const win = BrowserWindow.fromWebContents(event.sender);
+  // Default to the user's Downloads folder so saves land somewhere sensible.
+  const fallbackDir = app.getPath('downloads');
+  const resolvedDefault = defaultPath ?? path.join(fallbackDir, 'document.pdf');
   const result = await dialog.showSaveDialog(win, {
     title: 'Save Copy',
-    ...(defaultPath ? { defaultPath } : {}),
+    defaultPath: resolvedDefault,
     filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
   });
   if (result.canceled || !result.filePath) return { ok: false };
@@ -233,15 +245,71 @@ app.on('open-file', (e: ElectronEvent, filePath: string) => {
   }
 });
 
-// Extract a .pdf path from an argv array (skips flags and the executable itself)
-function getArgvFile(argv: string[]): string | null {
+// ── URL / file argument helpers ────────────────────────────────
+
+function isHttpUrl(s: string): boolean {
+  return s.startsWith('http://') || s.startsWith('https://');
+}
+
+// Extract the first useful argument: an http/https URL, or a local .pdf path.
+function getArgvTarget(argv: string[]): string | null {
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
-    if (a && !a.startsWith('-') && a.toLowerCase().endsWith('.pdf')) {
+    if (!a || a.startsWith('-')) continue;
+    if (isHttpUrl(a)) return a;
+    if (a.toLowerCase().endsWith('.pdf')) {
       try { if (fs.existsSync(a)) return a; } catch { /* ignore */ }
     }
   }
   return null;
+}
+
+// Download a remote PDF to %TEMP%\ReamletDownloads and return the local path.
+// Follows up to 5 redirects. Rejects on HTTP errors or network failures.
+function downloadPdfToTemp(url: string, redirectsLeft = 5): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (redirectsLeft <= 0) { reject(new Error('Too many redirects')); return; }
+
+    const tempDir = path.join(os.tmpdir(), 'ReamletDownloads');
+    try { fs.mkdirSync(tempDir, { recursive: true }); } catch { /* already exists */ }
+
+    const protocol = url.startsWith('https://') ? https : http;
+    const req = protocol.get(url, (res: NodeJS.ReadableStream & { statusCode: number; headers: Record<string, string> }) => {
+      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+        const location = res.headers['location'];
+        if (location) {
+          resolve(downloadPdfToTemp(location, redirectsLeft - 1));
+          return;
+        }
+      }
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+
+      let fileName: string;
+      try {
+        const base = path.basename(new URL(url).pathname) || 'download';
+        fileName = base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+      } catch {
+        fileName = 'download.pdf';
+      }
+      const filePath = path.join(tempDir, fileName);
+      const fileStream = fs.createWriteStream(filePath);
+      res.pipe(fileStream);
+      fileStream.on('finish', () => { fileStream.close(); resolve(filePath); });
+      fileStream.on('error', reject);
+    });
+    req.on('error', reject);
+  });
+}
+
+// Resolve a target (URL or local path) to a local file path ready for opening.
+async function resolveTarget(target: string): Promise<string | null> {
+  if (isHttpUrl(target)) {
+    try { return await downloadPdfToTemp(target); } catch { return null; }
+  }
+  return target;
 }
 
 // Single-instance lock: if another Reamlet is already running, forward the
@@ -251,25 +319,34 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_event: ElectronEvent, argv: string[]) => {
-    const filePath = getArgvFile(argv);
+  app.on('second-instance', async (_event: ElectronEvent, argv: string[]) => {
+    const target     = getArgvTarget(argv);
+    const background = argv.includes('--background');
     // Find the existing window, bring it forward, and open the file as a new tab
     const wins = BrowserWindow.getAllWindows();
     const win  = wins[0];
     if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
-    if (filePath) {
-      try {
-        const buffer = fs.readFileSync(filePath);
-        win.webContents.send('open-file-data', { filePath, buffer: buffer.buffer });
-      } catch { /* ignore */ }
+    if (!background) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+    if (target) {
+      const filePath = await resolveTarget(target);
+      if (filePath) {
+        try {
+          const buffer = fs.readFileSync(filePath);
+          win.webContents.send('open-file-data', { filePath, buffer: buffer.buffer });
+        } catch { /* ignore */ }
+      }
     }
   });
 
-  app.whenReady().then(() => {
-    createWindow(_pendingOpenFile || getArgvFile(process.argv));
+  app.whenReady().then(async () => {
+    const pendingTarget = _pendingOpenFile || getArgvTarget(process.argv);
     _pendingOpenFile = null;
+    const openPath   = pendingTarget ? await resolveTarget(pendingTarget) : null;
+    const background = process.argv.includes('--background');
+    createWindow(openPath, background);
     buildMenu();
   });
 

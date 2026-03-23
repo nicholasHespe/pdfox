@@ -5,11 +5,12 @@
   "main": "out/main.js",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "clean": "node -e \"['out','dist'].forEach(d => require('fs').rmSync(d, { recursive: true, force: true }))\"",
+    "clean": "node -e \"['out','dist','native-host/dist'].forEach(d => require('fs').rmSync(d, { recursive: true, force: true }))\"",
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
+    "build-native-host": "node node_modules/pkg/lib-es5/bin.js native-host/host.js --target node18-win-x64 --output native-host/dist/reamlet-native-host.exe",
     "start": "pnpm run build && electron out/main.js",
     "dist": "pnpm run build && electron-builder --win portable",
-    "build-win": "pnpm run build && electron-builder --win nsis portable --x64",
+    "build-win": "pnpm run build && pnpm run build-native-host && electron-builder --win nsis portable --x64",
     "build-mac": "pnpm run build && electron-builder --mac dmg --universal"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^20.0.0",
+    "pkg": "^5.8.1",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "eslint": "^10.1.0",
@@ -41,6 +43,24 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
+      "extraFiles": [
+        {
+          "from": "native-host/dist/reamlet-native-host.exe",
+          "to": "reamlet-native-host.exe"
+        },
+        {
+          "from": "native-host/com.reamlet.chromebridge.json",
+          "to": "com.reamlet.chromebridge.json"
+        },
+        {
+          "from": "native-host/register-host.bat",
+          "to": "register-host.bat"
+        },
+        {
+          "from": "native-host/unregister-host.bat",
+          "to": "unregister-host.bat"
+        }
+      ],
       "target": [
         {
           "target": "nsis",
