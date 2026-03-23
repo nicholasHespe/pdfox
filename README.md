@@ -1,24 +1,26 @@
 # Reamlet
-A lightweight, standalone PDF viewer for Windows and macOS focused on speed and productivity. No bloat, no cloud, no accounts. Does one thing well.
+A lightweight, standalone PDF viewer for Windows and macOS. Browser experience in a dedicated window, no more 50+ tabs open slowing your whole computer.
 
 ---
 
 ## Download
 
-### Windows
-| | |
-|---|---|
-| **Installer** (recommended) | [Reamlet Setup — latest release](https://github.com/nicholasHespe/Reamlet/releases/latest) |
-| **Portable** (no install needed) | [Reamlet portable — latest release](https://github.com/nicholasHespe/Reamlet/releases/latest) |
+[**Latest release →**](https://github.com/nicholasHespe/Reamlet/releases/latest)
 
-> Windows 10/11 x64. No runtime or dependencies required.
+| Platform | Status | Notes |
+|---|---|---|
+| Windows 10/11 x64 | Working | Installer and portable builds available |
+| Linux x64 | Untested | May work; no build CI configured |
+| macOS | Not working | Build currently broken |
 
-### macOS
-| | |
-|---|---|
-| **DMG** (Intel + Apple Silicon) | [Reamlet — latest release](https://github.com/nicholasHespe/Reamlet/releases/latest) |
+The release includes:
+- **Reamlet Setup** — NSIS installer (recommended)
+- **Reamlet portable** — single executable, no install needed
+- **Native messaging host** — bundled with the installer for Chrome/Edge extension support
 
-> macOS universal binary — runs natively on both Intel and Apple Silicon.
+### Browser Extension
+
+To open PDFs directly from Chrome or Edge, install the [Reamlet browser extension](https://github.com/nicholasHespe/Reamlet-extension).
 
 ---
 
