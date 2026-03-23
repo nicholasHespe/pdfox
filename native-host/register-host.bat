@@ -18,21 +18,9 @@ if not exist "%HOST_EXE%" (
     exit /b 1
 )
 
-:: Write the manifest with the resolved exe path (escape backslashes for JSON).
+:: Update only the "path" field in the manifest, preserving allowed_origins.
 set "JSON_PATH=%HOST_EXE:\=\\%"
-(
-  echo {
-  echo   "name": "com.reamlet.chromebridge",
-  echo   "description": "Reamlet native messaging host",
-  echo   "path": "%JSON_PATH%",
-  echo   "type": "stdio",
-  echo   "allowed_origins": [
-  echo     "chrome-extension://PLACEHOLDER_CHROME_ID/",
-  echo     "chrome-extension://PLACEHOLDER_EDGE_ID/",
-  echo     "chrome-extension://PLACEHOLDER_BRAVE_ID/"
-  echo   ]
-  echo }
-) > "%MANIFEST%"
+powershell -Command "(Get-Content '%MANIFEST%' -Raw) -replace '\"path\":\s*\"[^\"]*\"', '\"path\": \"%JSON_PATH%\"' | Set-Content '%MANIFEST%' -NoNewline"
 
 set "KEY_NAME=com.reamlet.chromebridge"
 
