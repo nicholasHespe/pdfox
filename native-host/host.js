@@ -90,7 +90,7 @@ function findReamlet() {
 // ── Message handler ───────────────────────────────────────────
 
 function handleMessage(msg) {
-  const { url } = msg;
+  const { url, background } = msg;
   if (!url || typeof url !== 'string') {
     reply({ ok: false, error: 'missing url' });
     return;
@@ -102,7 +102,8 @@ function handleMessage(msg) {
     return;
   }
 
-  const child = spawn(reamletPath, [url], {
+  const args = background ? [url, '--background'] : [url];
+  const child = spawn(reamletPath, args, {
     detached: true,
     stdio: 'ignore',
   });

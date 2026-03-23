@@ -18,18 +18,19 @@ if not exist "%HOST_EXE%" (
     exit /b 1
 )
 
-:: Update only the "path" field in the manifest, preserving allowed_origins.
-:: Uses [char]34 for double-quotes so cmd does not misparse the >> redirects.
+:: Read allowed_origins from the existing manifest, then rewrite the whole
+:: file with the correct path stamped in. Uses a here-string in PowerShell
+:: so cmd never has to echo lines containing double-quotes.
 set "JSON_PATH=%HOST_EXE:\=\\%"
 set "PS_FILE=%TEMP%\reamlet_reg_%RANDOM%.ps1"
-echo $f = '%MANIFEST%'> "%PS_FILE%"
-echo $p = '%JSON_PATH%'>> "%PS_FILE%"
-echo $c = [System.IO.File]::ReadAllText($f)>> "%PS_FILE%"
-echo $q = [char]34>> "%PS_FILE%"
-echo $pattern = $q + 'path' + $q + ':\s*' + $q + '[^' + $q + ']*' + $q>> "%PS_FILE%"
-echo $r = $q + 'path' + $q + ': ' + $q + $p + $q>> "%PS_FILE%"
-echo $c = $c -replace $pattern, $r>> "%PS_FILE%"
-echo [System.IO.File]::WriteAllText($f, $c)>> "%PS_FILE%"
+(
+  echo $manifest  = '%MANIFEST%'
+  echo $hostPath  = '%JSON_PATH%'
+  echo $existing  = Get-Content $manifest -Raw ^| ConvertFrom-Json
+  echo $origins   = $existing.allowed_origins -join '","'
+  echo $json = "{`n  `"name`": `"com.reamlet.chromebridge`",`n  `"description`": `"Reamlet native messaging host`",`n  `"path`": `"$hostPath`",`n  `"type`": `"stdio`",`n  `"allowed_origins`": [`n    `"$origins`"`n  ]`n}"
+  echo [System.IO.File]::WriteAllText^($manifest, $json, [System.Text.Encoding]::UTF8^)
+) > "%PS_FILE%"
 powershell -ExecutionPolicy Bypass -NoProfile -File "%PS_FILE%"
 del "%PS_FILE%" 2>nul
 

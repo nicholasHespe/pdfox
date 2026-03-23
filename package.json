@@ -49,8 +49,8 @@
           "to": "reamlet-native-host.exe"
         },
         {
-          "from": "native-host/com.reamlet.chromeBridge.json",
-          "to": "com.reamlet.chromeBridge.json"
+          "from": "native-host/com.reamlet.chromebridge.json",
+          "to": "com.reamlet.chromebridge.json"
         },
         {
           "from": "native-host/register-host.bat",
@@ -94,8 +94,7 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "runAfterFinish": true,
-      "include": "installer.nsh"
+      "runAfterFinish": true
     },
     "files": [
       "out/**/*",

@@ -16,8 +16,9 @@ const http  = require('http');
 
 const isMac = process.platform === 'darwin';
 
-function createWindow(openFilePath: string | null): BW {
+function createWindow(openFilePath: string | null, showInactive = false): BW {
   const win = new BrowserWindow({
+    show: false,
     width: 1280,
     height: 900,
     minWidth: 640,
@@ -36,6 +37,11 @@ function createWindow(openFilePath: string | null): BW {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  win.once('ready-to-show', () => {
+    if (showInactive) win.showInactive();
+    else win.show();
   });
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -314,13 +320,16 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', async (_event: ElectronEvent, argv: string[]) => {
-    const target = getArgvTarget(argv);
+    const target     = getArgvTarget(argv);
+    const background = argv.includes('--background');
     // Find the existing window, bring it forward, and open the file as a new tab
     const wins = BrowserWindow.getAllWindows();
     const win  = wins[0];
     if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
+    if (!background) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
     if (target) {
       const filePath = await resolveTarget(target);
       if (filePath) {
@@ -335,8 +344,9 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     const pendingTarget = _pendingOpenFile || getArgvTarget(process.argv);
     _pendingOpenFile = null;
-    const openPath = pendingTarget ? await resolveTarget(pendingTarget) : null;
-    createWindow(openPath);
+    const openPath   = pendingTarget ? await resolveTarget(pendingTarget) : null;
+    const background = process.argv.includes('--background');
+    createWindow(openPath, background);
     buildMenu();
   });
 

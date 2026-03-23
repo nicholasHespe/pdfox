@@ -1,9 +1,11 @@
-; ── Reamlet: set-as-default PDF viewer support ────────────────────────────
-; Adds a "Set Reamlet as the default PDF viewer" checkbox to the Finish page,
-; registers app capabilities with Windows, and cleans up on uninstall.
+; Reamlet — custom NSIS installer script (build/installer.nsh)
+; electron-builder auto-detects this file from buildResourcesDir.
+; Handles: Windows Default Programs, native messaging host registration.
 
-; The ProgID "PDF Document" matches the name field in package.json fileAssociations,
-; which is what electron-builder passes to APP_ASSOCIATE as the FILECLASS.
+!ifndef BUILD_UNINSTALLER
+  !include "StrFunc.nsh"
+  ${StrRep}
+!endif
 
 ; ----- Finish page ---------------------------------------------------------
 ; customFinishPage REPLACES the entire finish block (it's an !if/!else against
@@ -32,23 +34,60 @@
   !insertmacro MUI_PAGE_FINISH
 !macroend
 
-; ----- Register with Windows Default Programs on install ------------------
+; ----- Register on install --------------------------------------------------
 !macro customInstall
+  ; Windows Default Programs registration
   WriteRegStr HKCU "Software\nicholasHespe\Reamlet\Capabilities" "ApplicationName" "Reamlet"
   WriteRegStr HKCU "Software\nicholasHespe\Reamlet\Capabilities" "ApplicationDescription" "Lightweight PDF viewer"
   WriteRegStr HKCU "Software\nicholasHespe\Reamlet\Capabilities\FileAssociations" ".pdf" "PDF Document"
   WriteRegStr HKCU "Software\RegisteredApplications" "Reamlet" "Software\nicholasHespe\Reamlet\Capabilities"
+
+  ; Native messaging host — write manifest with escaped path
+  ${StrRep} $R0 "$INSTDIR\reamlet-native-host.exe" "\" "\\"
+  FileOpen $0 "$INSTDIR\com.reamlet.chromebridge.json" w
+  FileWrite $0 "{$\n"
+  FileWrite $0 "  $\"name$\": $\"com.reamlet.chromebridge$\",$\n"
+  FileWrite $0 "  $\"description$\": $\"Reamlet native messaging host$\",$\n"
+  FileWrite $0 "  $\"path$\": $\"$R0$\",$\n"
+  FileWrite $0 "  $\"type$\": $\"stdio$\",$\n"
+  FileWrite $0 "  $\"allowed_origins$\": [$\n"
+  FileWrite $0 "    $\"chrome-extension://PLACEHOLDER_CHROME_ID/$\"$\n"
+  FileWrite $0 "  ]$\n"
+  FileWrite $0 "}"
+  FileClose $0
+
+  ; Remove portable-only files that extraFiles bundles for both targets
+  Delete "$INSTDIR\register-host.bat"
+  Delete "$INSTDIR\unregister-host.bat"
+
+  ; Register native messaging host for each supported Chromium browser
+  WriteRegStr HKCU "Software\Google\Chrome\NativeMessagingHosts\com.reamlet.chromebridge"              "" "$INSTDIR\com.reamlet.chromebridge.json"
+  WriteRegStr HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.reamlet.chromebridge"             "" "$INSTDIR\com.reamlet.chromebridge.json"
+  WriteRegStr HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.reamlet.chromebridge" "" "$INSTDIR\com.reamlet.chromebridge.json"
+  WriteRegStr HKCU "Software\Vivaldi\NativeMessagingHosts\com.reamlet.chromebridge"                    "" "$INSTDIR\com.reamlet.chromebridge.json"
+  WriteRegStr HKCU "Software\Opera Software\Opera\NativeMessagingHosts\com.reamlet.chromebridge"       "" "$INSTDIR\com.reamlet.chromebridge.json"
+  WriteRegStr HKCU "Software\Opera Software\Opera GX\NativeMessagingHosts\com.reamlet.chromebridge"   "" "$INSTDIR\com.reamlet.chromebridge.json"
 !macroend
 
-; ----- Clean up capabilities registration on uninstall -------------------
+; ----- Clean up on uninstall -----------------------------------------------
 !macro customUnInstall
+  ; Kill any running Reamlet instances before files are removed
+  ExecWait 'taskkill /F /IM "Reamlet.exe"'
+
+  ; Windows Default Programs cleanup
   DeleteRegKey   HKCU "Software\nicholasHespe\Reamlet"
   DeleteRegValue HKCU "Software\RegisteredApplications" "Reamlet"
+
+  ; Native messaging host cleanup for all browsers
+  DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.reamlet.chromebridge"
+  DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.reamlet.chromebridge"
+  DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.reamlet.chromebridge"
+  DeleteRegKey HKCU "Software\Vivaldi\NativeMessagingHosts\com.reamlet.chromebridge"
+  DeleteRegKey HKCU "Software\Opera Software\Opera\NativeMessagingHosts\com.reamlet.chromebridge"
+  DeleteRegKey HKCU "Software\Opera Software\Opera GX\NativeMessagingHosts\com.reamlet.chromebridge"
 !macroend
 
-; ----- Called when the checkbox is ticked and Finish is clicked -----------
-; Guard against the uninstaller-only build pass where the function would be
-; unreferenced and NSIS would promote the warning to a fatal error.
+; ----- Called when the "Set as default" checkbox is ticked on Finish page ---
 !ifndef BUILD_UNINSTALLER
 Function SetAsDefaultPDF
   WriteRegStr HKCU "Software\Classes\.pdf" "" "PDF Document"
