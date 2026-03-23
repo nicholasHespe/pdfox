@@ -1,6 +1,7 @@
 node_modules/
 dist/
 out/
+native-host/dist/
 Reamlet-extension/
 .DS_Store
 *.log
