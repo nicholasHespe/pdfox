@@ -1080,3 +1080,8 @@ html, body {
   outline: 2px solid rgba(255,140,0,0.9);
   outline-offset: 1px;
 }
+
+#ext-id-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0,122,204,0.25);
+}
