@@ -1,5 +1,5 @@
 {
-  "name": "com.reamlet.chromeBridge",
+  "name": "com.reamlet.chromebridge",
   "description": "Reamlet native messaging host — opens PDFs in the Reamlet desktop app",
   "path": "PLACEHOLDER_PATH",
   "type": "stdio",

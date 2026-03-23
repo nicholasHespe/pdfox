@@ -10,7 +10,7 @@ setlocal EnableDelayedExpansion
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "HOST_EXE=%SCRIPT_DIR%\reamlet-native-host.exe"
-set "MANIFEST=%SCRIPT_DIR%\com.reamlet.chromeBridge.json"
+set "MANIFEST=%SCRIPT_DIR%\com.reamlet.chromebridge.json"
 
 if not exist "%HOST_EXE%" (
     echo ERROR: reamlet-native-host.exe not found in %SCRIPT_DIR%
@@ -22,7 +22,7 @@ if not exist "%HOST_EXE%" (
 set "JSON_PATH=%HOST_EXE:\=\\%"
 (
   echo {
-  echo   "name": "com.reamlet.chromeBridge",
+  echo   "name": "com.reamlet.chromebridge",
   echo   "description": "Reamlet native messaging host",
   echo   "path": "%JSON_PATH%",
   echo   "type": "stdio",
@@ -34,7 +34,7 @@ set "JSON_PATH=%HOST_EXE:\=\\%"
   echo }
 ) > "%MANIFEST%"
 
-set "KEY_NAME=com.reamlet.chromeBridge"
+set "KEY_NAME=com.reamlet.chromebridge"
 
 set BROWSERS[0]=HKCU\Software\Google\Chrome\NativeMessagingHosts
 set BROWSERS[1]=HKCU\Software\Microsoft\Edge\NativeMessagingHosts

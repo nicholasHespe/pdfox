@@ -3,7 +3,7 @@
 
 setlocal EnableDelayedExpansion
 
-set "KEY_NAME=com.reamlet.chromeBridge"
+set "KEY_NAME=com.reamlet.chromebridge"
 
 set BROWSERS[0]=HKCU\Software\Google\Chrome\NativeMessagingHosts
 set BROWSERS[1]=HKCU\Software\Microsoft\Edge\NativeMessagingHosts
