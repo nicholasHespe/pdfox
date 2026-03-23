@@ -10,6 +10,8 @@ interface Window {
     getWindowId: () => Promise<number>;
     openFileFromPath: (filePath: string) => Promise<{ filePath: string; buffer: ArrayBuffer } | null>;
     notifyTabTransferred: (sourceWindowId: number, filePath: string) => Promise<{ ok: boolean }>;
+    getExtensionId: () => Promise<{ ok: boolean; id?: string; error?: string }>;
+    setExtensionId: (id: string) => Promise<{ ok: boolean; error?: string }>;
     onMenuEvent: (callback: (event: string) => void) => void;
     onOpenFileData: (callback: (data: { filePath: string; buffer: ArrayBuffer }) => void) => void;
     onCloseTabByFilepath: (callback: (filePath: string) => void) => void;

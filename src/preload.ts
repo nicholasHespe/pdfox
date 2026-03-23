@@ -33,9 +33,15 @@ contextBridge.exposeInMainWorld('api', {
   notifyTabTransferred: (sourceWindowId: number, filePath: string) =>
     ipcRenderer.invoke('notify-tab-transferred', sourceWindowId, filePath),
 
+  // Read the current extension ID from the native messaging manifest
+  getExtensionId: () => ipcRenderer.invoke('get-extension-id'),
+
+  // Write a new extension ID to the native messaging manifest
+  setExtensionId: (id: string) => ipcRenderer.invoke('set-extension-id', id),
+
   // Subscribe to menu events
   onMenuEvent: (callback: (event: string) => void) => {
-    ['menu-open', 'menu-save', 'menu-save-copy', 'menu-close-tab', 'menu-reopen-tab']
+    ['menu-open', 'menu-save', 'menu-save-copy', 'menu-close-tab', 'menu-reopen-tab', 'menu-extension-id']
       .forEach(ev => ipcRenderer.on(ev, () => callback(ev)));
   },
 

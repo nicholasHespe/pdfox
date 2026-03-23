@@ -80,6 +80,8 @@ function buildMenu(): void {
         { label: 'Close Tab',       accelerator: 'CmdOrCtrl+W',           click: () => fw()?.webContents.send('menu-close-tab') },
         { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T',  click: () => fw()?.webContents.send('menu-reopen-tab') },
         { type: 'separator' },
+        { label: 'Extension ID…', click: () => fw()?.webContents.send('menu-extension-id') },
+        { type: 'separator' },
         { role: 'quit' },
       ],
     },
@@ -210,6 +212,38 @@ ipcMain.handle('notify-tab-transferred', (_event: IpcMainInvokeEvent, sourceWind
 
 ipcMain.on('open-devtools', (event: IpcMainEvent) => {
   BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
+});
+
+// Read / write the extension ID in the native messaging host manifest.
+// The manifest lives next to the Reamlet exe (installed and portable builds).
+function getManifestPath(): string {
+  return path.join(path.dirname(process.execPath), 'com.reamlet.chromebridge.json');
+}
+
+ipcMain.handle('get-extension-id', () => {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(getManifestPath(), 'utf8'));
+    const origins: string[] = manifest.allowed_origins ?? [];
+    const id = origins.map((o: string) => {
+      const m = o.match(/^chrome-extension:\/\/([^/]+)\/$/);
+      return m ? m[1] : null;
+    }).filter(Boolean)[0] ?? '';
+    return { ok: true, id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('set-extension-id', (_event: IpcMainInvokeEvent, id: string) => {
+  try {
+    const p = getManifestPath();
+    const manifest = JSON.parse(fs.readFileSync(p, 'utf8'));
+    manifest.allowed_origins = [`chrome-extension://${id}/`];
+    fs.writeFileSync(p, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 });
 
 // Initiate a native OS file drag so external apps (Outlook, Explorer, etc.) can receive the file.

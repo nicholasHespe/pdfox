@@ -1097,6 +1097,7 @@ const _menuActions = {
   'zoom-100':    () => window.api.setUiZoom(1.0),
   'zoom-125':    () => window.api.setUiZoom(1.25),
   'zoom-150':    () => window.api.setUiZoom(1.5),
+  'extension-id': () => _openExtensionIdModal(),
   'zoom-200':    () => window.api.setUiZoom(2.0),
   'fit-width':   () => fitWidth(),
   'fit-height':  () => fitHeight(),
@@ -1141,11 +1142,42 @@ document.querySelectorAll('.titlebar-dropdown').forEach(dropdown => {
 
 window.api.onMenuEvent((event) => {
   switch (event) {
-    case 'menu-open':       openFile(); break;
-    case 'menu-save':       saveTab(activeTab); break;
-    case 'menu-save-copy':  saveTabCopy(activeTab); break;
-    case 'menu-close-tab':  if (activeTab) requestCloseTab(activeTab); break;
-    case 'menu-reopen-tab': reopenLastTab(); break;
+    case 'menu-open':         openFile(); break;
+    case 'menu-save':         saveTab(activeTab); break;
+    case 'menu-save-copy':    saveTabCopy(activeTab); break;
+    case 'menu-close-tab':    if (activeTab) requestCloseTab(activeTab); break;
+    case 'menu-reopen-tab':   reopenLastTab(); break;
+    case 'menu-extension-id': _openExtensionIdModal(); break;
+  }
+});
+
+// ── Extension ID modal ─────────────────────────────────────────
+
+async function _openExtensionIdModal() {
+  const input  = document.getElementById('ext-id-input')  as HTMLInputElement;
+  const modal  = document.getElementById('ext-id-modal')!;
+
+  const result = await window.api.getExtensionId();
+  input.value  = result.ok ? (result.id ?? '') : '';
+
+  modal.classList.remove('hidden');
+  input.focus();
+  input.select();
+}
+
+document.getElementById('ext-id-cancel')!.addEventListener('click', () => {
+  document.getElementById('ext-id-modal')!.classList.add('hidden');
+});
+
+document.getElementById('ext-id-save')!.addEventListener('click', async () => {
+  const input = document.getElementById('ext-id-input') as HTMLInputElement;
+  const id    = input.value.trim();
+  if (!id) return;
+  const result = await window.api.setExtensionId(id);
+  if (result.ok) {
+    document.getElementById('ext-id-modal')!.classList.add('hidden');
+  } else {
+    alert('Failed to save: ' + result.error);
   }
 });
 

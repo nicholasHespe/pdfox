@@ -28,6 +28,8 @@
             <button data-menu="close-tab">Close Tab <span>Ctrl+W</span></button>
             <button data-menu="reopen-tab">Reopen Tab <span>Ctrl+⇧+T</span></button>
             <div class="tdrop-sep"></div>
+            <button data-menu="extension-id">Extension ID…</button>
+            <div class="tdrop-sep"></div>
             <button data-menu="quit">Quit</button>
           </div>
         </div>
@@ -332,6 +334,23 @@
         <button class="modal-btn" id="close-cancel">Cancel</button>
         <button class="modal-btn" id="close-discard">Discard All</button>
         <button class="modal-btn primary" id="close-save">Save All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Extension ID modal ────────────────────────────────────── -->
+  <div id="ext-id-modal" class="modal-overlay hidden">
+    <div class="modal-box" style="min-width:420px;">
+      <div class="modal-title">Extension ID</div>
+      <p class="modal-hint">Paste the extension ID from <code>edge://extensions</code> or <code>chrome://extensions</code>.</p>
+      <div class="modal-body" style="padding:0 0 8px;">
+        <input id="ext-id-input" type="text" spellcheck="false" autocomplete="off"
+               placeholder="e.g. abcdefghijklmnopabcdefghijklmnop"
+               style="width:100%;box-sizing:border-box;padding:6px 8px;font-family:monospace;font-size:13px;background:#2a2a2a;color:#e0e0e0;border:1px solid #555;border-radius:4px;" />
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn" id="ext-id-cancel">Cancel</button>
+        <button class="modal-btn primary" id="ext-id-save">Save</button>
       </div>
     </div>
   </div>
