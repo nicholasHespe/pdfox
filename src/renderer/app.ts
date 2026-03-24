@@ -1122,6 +1122,14 @@ document.addEventListener('keydown', async (e) => {
   if (ctrl && e.key === '0') { e.preventDefault(); fitWidth(); return; }
   if (ctrl && e.key === 'z') { e.preventDefault(); activeTab?.annotator?.undo(); return; }
   if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); activeTab?.annotator?.redo(); return; }
+  if (ctrl && e.key === 'x') { e.preventDefault(); activeTab?.annotator?.cut(); return; }
+  if (ctrl && e.key === 'v') { e.preventDefault(); activeTab?.annotator?.paste(); return; }
+  if (ctrl && e.key === 'c') {
+    const ann = activeTab?.annotator;
+    if (ann && ann._selectedIdx !== null && Annotator._cuttableTypes.includes(ann.annotations[ann._selectedIdx]?.type)) {
+      e.preventDefault(); ann.copy(); return;
+    }
+  }
   if (ctrl && e.key === 'p') { e.preventDefault(); window.print(); return; }
   if (ctrl && e.key === 'r') { e.preventDefault(); if (activeTab) _applyZoomNow(activeTab.viewer.scale); return; }
   if (ctrl && e.key === 'f') { e.preventDefault(); finder.open(); return; }
@@ -1129,6 +1137,8 @@ document.addEventListener('keydown', async (e) => {
   if (e.key === 'Escape' && finder.isOpen()) { e.preventDefault(); finder.close(); return; }
 
   if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
+  if (e.key === 'Delete') { activeTab?.annotator?.deleteSelected(); return; }
 
   const toolMap = {
     d: 'draw', h: 'highlight', t: 'text', Escape: 'select',

@@ -34,6 +34,8 @@ export class Annotator {
   _docMousemoveDrag!: (e: MouseEvent) => void;
   _docMouseupDrag!: (e: MouseEvent) => void;
   _docKeydown!: (e: KeyboardEvent) => void;
+  _lastCursorPageNum: number | null;
+  _lastCursorNorm: [number, number] | null;
 
   /**
    * @param {Object[]} pages  - viewer.pages array (each has annotCanvas, wrapper)
@@ -66,6 +68,8 @@ export class Annotator {
     this._dragOrigAnn     = null;  // deep copy of annotation before drag
     this._dragPageRect    = null;  // wrapper getBoundingClientRect at drag start
     this._clipboard       = null;  // cut annotation waiting to be pasted
+    this._lastCursorPageNum = null;
+    this._lastCursorNorm    = null;
 
     this._history = ['[]'];
     this._histIdx = 0;
@@ -135,6 +139,13 @@ export class Annotator {
 
   static readonly _cuttableTypes = ['text', 'rect', 'oval', 'line', 'arrow'];
 
+  copy() {
+    if (this._selectedIdx === null) return;
+    const ann = this.annotations[this._selectedIdx];
+    if (!Annotator._cuttableTypes.includes(ann.type)) return;
+    this._clipboard = JSON.parse(JSON.stringify(ann)) as Annotation;
+  }
+
   cut() {
     if (this._selectedIdx === null) return;
     const ann = this.annotations[this._selectedIdx];
@@ -150,17 +161,43 @@ export class Annotator {
   paste() {
     if (!this._clipboard) return;
     const clone = JSON.parse(JSON.stringify(this._clipboard)) as Annotation;
-    const off = 0.03;
-    if (clone.type === 'text') {
-      clone.x += off;
-      clone.y += off;
+    if (this._lastCursorPageNum !== null && this._lastCursorNorm !== null) {
+      const [cx, cy] = this._lastCursorNorm;
+      clone.pageNum = this._lastCursorPageNum;
+      if (clone.type === 'text') {
+        clone.x = cx;
+        clone.y = cy;
+      } else {
+        const sc = clone as ShapeAnnotation;
+        const halfW = (sc.x2 - sc.x1) / 2;
+        const halfH = (sc.y2 - sc.y1) / 2;
+        sc.x1 = cx - halfW;
+        sc.y1 = cy - halfH;
+        sc.x2 = cx + halfW;
+        sc.y2 = cy + halfH;
+      }
     } else {
-      (clone as ShapeAnnotation).x1 += off;
-      (clone as ShapeAnnotation).y1 += off;
-      (clone as ShapeAnnotation).x2 += off;
-      (clone as ShapeAnnotation).y2 += off;
+      const off = 0.03;
+      if (clone.type === 'text') {
+        clone.x += off;
+        clone.y += off;
+      } else {
+        (clone as ShapeAnnotation).x1 += off;
+        (clone as ShapeAnnotation).y1 += off;
+        (clone as ShapeAnnotation).x2 += off;
+        (clone as ShapeAnnotation).y2 += off;
+      }
     }
     this.annotations.push(clone);
+    this._pushHistory();
+    this.redrawAll();
+  }
+
+  deleteSelected() {
+    if (this._selectedIdx === null) return;
+    this.annotations.splice(this._selectedIdx, 1);
+    this._selectedIdx     = null;
+    this._selectedPageNum = null;
     this._pushHistory();
     this.redrawAll();
   }
@@ -262,6 +299,10 @@ export class Annotator {
     };
 
     const onMove = (e: MouseEvent) => {
+      const [cx, cy] = this._canvasPos(canvas, e);
+      this._lastCursorPageNum = pageNum;
+      this._lastCursorNorm    = [cx / canvas.width, cy / canvas.height];
+
       if (this.tool === 'draw' && this._drawing) {
         // Ignore events from canvases other than the one the stroke started on.
         // Guards against fast mouse moves that skip the mouseleave event.
@@ -405,8 +446,11 @@ export class Annotator {
     // Redraw the whole page + full path each frame so round caps at segment
     // joints don't stack alpha (a single stroke never compounds with itself).
     const onWrapperMove = (e: MouseEvent) => {
-      if (!this._freehighlight || this._freehighlight.pageNum !== pageNum) return;
       const rect = wrapper.getBoundingClientRect();
+      this._lastCursorPageNum = pageNum;
+      this._lastCursorNorm    = [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
+
+      if (!this._freehighlight || this._freehighlight.pageNum !== pageNum) return;
       const nx = (e.clientX - rect.left) / rect.width;
       const ny = (e.clientY - rect.top)  / rect.height;
       const fh = this._freehighlight;
