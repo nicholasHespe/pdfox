@@ -580,6 +580,10 @@ function switchTab(tab: Tab) {
   attachScrollListener(tab);
   _positionScrollbar();
   finder.onTabSwitch();
+  if (tab._notBeenViewed) {
+    tab._notBeenViewed = false;
+    void fitWidth();
+  }
 }
 
 function closeTab(tab: Tab) {
@@ -724,6 +728,7 @@ async function _loadTabContent(tab: Tab) {
   }
   if (tab.loadingEl) { tab.loadingEl.remove(); tab.loadingEl = null; }
   tab.lastActive = Date.now(); // reset clock so freshly-loaded tabs don't immediately sleep
+  tab._notBeenViewed = true;
   renderTabBar();
   if (activeTab === tab) {
     syncToolButtons(tab.annotator!.tool);
@@ -732,6 +737,8 @@ async function _loadTabContent(tab: Tab) {
     renderToc(tab.outline);
     updatePageDisplay(tab);
     _syncScrollbar();
+    tab._notBeenViewed = false;
+    await fitWidth();
   }
 }
 
