@@ -474,8 +474,9 @@ export class Annotator {
     const weight   = this.textBold      ? 'bold'      : 'normal';
     const decor    = this.textUnderline ? 'underline' : 'none';
 
+    const scale = this.viewer?.scale ?? 1;
     this._openTextarea(wrapper, cx * scaleX, cy * scaleY, '', {
-      fontSize, weight, decor, color: this.color,
+      fontSize: fontSize * scale, weight, decor, color: this.color,
       onCommit: (text) => {
         if (!text) return;
         const annot: TextAnnotation = {
@@ -512,8 +513,9 @@ export class Annotator {
     const weight = ann.bold      ? 'bold'      : 'normal';
     const decor  = ann.underline ? 'underline' : 'none';
 
+    const scale = this.viewer?.scale ?? 1;
     this._openTextarea(wrapper, ann.x * w * scaleX, ann.y * h * scaleY, ann.text, {
-      fontSize: ann.fontSize, weight, decor, color: ann.color,
+      fontSize: ann.fontSize * scale, weight, decor, color: ann.color,
       onCommit: (text) => {
         const newAnn = { ...ann, text };
         if (text) {
@@ -536,7 +538,7 @@ export class Annotator {
     ta.style.cssText = `
       position:        absolute;
       left:            ${left - 4}px;
-      top:             ${top - 2}px;
+      top:             ${top + 6}px;
       min-width:       120px;
       min-height:      ${fontSize + 6}px;
       background:      transparent;
@@ -664,7 +666,8 @@ export class Annotator {
       const allY = ann.rects.flatMap(r => [r.y * h, (r.y + r.height) * h]);
       return { x: Math.min(...allX), y: Math.min(...allY), w: Math.max(...allX) - Math.min(...allX), h: Math.max(...allY) - Math.min(...allY) };
     } else if (ann.type === 'text') {
-      return { x: ann.x * w - 2, y: ann.y * h - ann.fontSize - 2, w: 120, h: ann.fontSize * 2 + 4 };
+      const fs = ann.fontSize * (this.viewer?.scale ?? 1);
+      return { x: ann.x * w - 2, y: ann.y * h - 2, w: 120, h: fs * 1.5 + 4 };
     } else if (ann.type === 'rect' || ann.type === 'oval' || ann.type === 'line' || ann.type === 'arrow') {
       const x1 = Math.min(ann.x1, ann.x2) * w, x2 = Math.max(ann.x1, ann.x2) * w;
       const y1 = Math.min(ann.y1, ann.y2) * h, y2 = Math.max(ann.y1, ann.y2) * h;
@@ -803,16 +806,18 @@ export class Annotator {
       });
 
     } else if (annot.type === 'text') {
+      const scale  = this.viewer?.scale ?? 1;
+      const fs     = annot.fontSize * scale;
       const weight = annot.bold ? 'bold ' : '';
       ctx.fillStyle = annot.color;
-      ctx.font      = `${weight}${annot.fontSize}px system-ui, sans-serif`;
+      ctx.font      = `${weight}${fs}px system-ui, sans-serif`;
       annot.text.split('\n').forEach((line: string, i: number) => {
         const x = annot.x * w;
-        const y = annot.y * h + i * (annot.fontSize + 2) + annot.fontSize;
+        const y = annot.y * h + i * (fs + 2) + fs;
         ctx.fillText(line, x, y);
         if (annot.underline) {
           const metrics = ctx.measureText(line);
-          ctx.fillRect(x, y + 2, metrics.width, Math.max(1, annot.fontSize / 12));
+          ctx.fillRect(x, y + 2, metrics.width, Math.max(1, fs / 12));
         }
       });
 
