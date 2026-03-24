@@ -44,6 +44,9 @@ let _nativeDrag: { filePath: string; x: number; y: number } | null = null; // { 
 // Context for the close-confirm modal: null | { type:'window' } | { type:'tab', tab }
 let _closeContext: CloseContext = null;
 
+// Tab right-click context menu target
+let _tabContextMenuTab: Tab | null = null;
+
 // Window identity (obtained from main process at startup)
 let myWindowId: number | null = null;
 
@@ -70,6 +73,7 @@ const colorDot       = document.getElementById('color-dot')!;
 const colorPanel     = document.getElementById('color-panel')!;
 const titleFilename  = document.getElementById('title-filename')!;
 const contextMenu    = document.getElementById('context-menu')!;
+const tabContextMenu = document.getElementById('tab-context-menu')!;
 
 // ── Platform setup ─────────────────────────────────────────────
 
@@ -180,6 +184,11 @@ function _hideContextMenu() {
   contextMenu.classList.add('hidden');
 }
 
+function _hideTabContextMenu() {
+  tabContextMenu.classList.add('hidden');
+  _tabContextMenuTab = null;
+}
+
 viewerHost.addEventListener('contextmenu', (e) => {
   if (!activeTab) return;
   e.preventDefault();
@@ -193,7 +202,8 @@ viewerHost.addEventListener('contextmenu', (e) => {
 });
 
 document.addEventListener('mousedown', (e) => {
-  if (!(e.target as Element)?.closest('#context-menu')) _hideContextMenu();
+  if (!(e.target as Element)?.closest('#context-menu'))     _hideContextMenu();
+  if (!(e.target as Element)?.closest('#tab-context-menu')) _hideTabContextMenu();
 });
 
 contextMenu.addEventListener('mousedown', (e) => {
@@ -215,6 +225,28 @@ contextMenu.addEventListener('mousedown', (e) => {
       finder.open();
       break;
     }
+  }
+});
+
+// ── Tab context menu ────────────────────────────────────────────
+
+tabContextMenu.addEventListener('mousedown', (e) => {
+  const btn = (e.target as Element)?.closest('[data-tctx]') as HTMLButtonElement | null;
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  const tab = _tabContextMenuTab;
+  _hideTabContextMenu();
+  if (!tab) return;
+  switch (btn.dataset.tctx) {
+    case 'close':        requestCloseTab(tab); break;
+    case 'save':         saveTab(tab); break;
+    case 'save-as':      saveTabCopy(tab); break;
+    case 'print':        switchTab(tab); window.print(); break;
+    case 'copy-file':    window.api.copyFileToClipboard(tab.filePath!); break;
+    case 'reveal':       window.api.revealInExplorer(tab.filePath!); break;
+    case 'close-others':
+      [...tabs].filter(t => t !== tab).forEach(t => requestCloseTab(t));
+      break;
   }
 });
 
@@ -427,6 +459,24 @@ function renderTabBar() {
       tabs.splice(srcIdx, 1);
       tabs.splice(dstIdx, 0, srcTab);
       renderTabBar();
+    });
+
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      _tabContextMenuTab = t;
+      const hasDisk = !!(t.filePath && /[\\/]/.test(t.filePath)) && !t.dirty;
+      const btnCopy   = tabContextMenu.querySelector<HTMLButtonElement>('[data-tctx="copy-file"]')!;
+      const btnReveal = tabContextMenu.querySelector<HTMLButtonElement>('[data-tctx="reveal"]')!;
+      btnCopy.disabled   = !hasDisk;
+      btnReveal.disabled = !hasDisk;
+      tabContextMenu.classList.remove('hidden');
+      const menuW = tabContextMenu.offsetWidth  || 160;
+      const menuH = tabContextMenu.offsetHeight || 200;
+      const left  = Math.min(e.clientX, window.innerWidth  - menuW - 4);
+      const top   = Math.min(e.clientY, window.innerHeight - menuH - 4);
+      tabContextMenu.style.left = `${Math.max(0, left)}px`;
+      tabContextMenu.style.top  = `${Math.max(0, top)}px`;
     });
 
     tabBar.appendChild(el);
@@ -795,7 +845,7 @@ async function saveTabCopy(tab: Tab | null) {
   const bytes       = await embedAnnotations(tab.pdfBytes, annotations, viewer);
   const defaultPath = (tab._suggestedDir && tab._suggestedName)
     ? tab._suggestedDir + '/' + tab._suggestedName
-    : undefined;
+    : tab.filePath ?? undefined;
   const res = await window.api.saveFileCopy(bytes.buffer as ArrayBuffer, defaultPath);
   if (res.ok) {
     tab.filePath       = res.filePath ?? null;

@@ -15,6 +15,8 @@ interface Window {
     onMenuEvent: (callback: (event: string) => void) => void;
     onOpenFileData: (callback: (data: { filePath: string; buffer: ArrayBuffer }) => void) => void;
     onCloseTabByFilepath: (callback: (filePath: string) => void) => void;
+    copyFileToClipboard: (filePath: string) => Promise<{ ok: boolean }>;
+    revealInExplorer:    (filePath: string) => Promise<{ ok: boolean }>;
     startDrag: (filePath: string) => void;
     setUiZoom: (factor: number) => void;
     getUiZoom: () => number;
