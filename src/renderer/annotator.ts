@@ -538,7 +538,7 @@ export class Annotator {
     ta.style.cssText = `
       position:        absolute;
       left:            ${left - 4}px;
-      top:             ${top - fontSize / 2}px;
+      top:             ${top - 2}px;
       width:           ${Math.max(fontSize * 8, 80)}px;
       height:          ${fontSize + 8}px;
       background:      transparent;
