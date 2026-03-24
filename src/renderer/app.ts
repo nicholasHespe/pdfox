@@ -578,11 +578,6 @@ function markDirty(tab: Tab) {
   renderTabBar();
 }
 
-function clearDirty(tab: Tab) {
-  tab.dirty = false;
-  renderTabBar();
-}
-
 // ── Close prompt helpers ────────────────────────────────────────
 
 function showCloseModal(ctx: Exclude<CloseContext, null>, message: string) {
@@ -682,7 +677,6 @@ async function _loadTabContent(tab: Tab) {
   try {
     await tab.viewer.load(tab.pdfBytes);
     tab.annotator = new Annotator(tab.viewer.pages, tab.viewer);
-    tab._cleanAnnotationsJSON = '[]';
     _patchAnnotatorForDirty(tab);
     tab.outline = await tab.viewer.getOutline();
   } catch (err) {
@@ -770,7 +764,6 @@ async function saveTab(tab: Tab | null) {
       tab.pdfBytes     = bytes;
       tab._savedBytes  = null;
       tab.dirty        = false;
-      tab._cleanAnnotationsJSON = JSON.stringify([...annotations]);
       renderTabBar();
       return true;
     } else if (res.error && res.error !== 'cancelled') {
@@ -791,7 +784,6 @@ async function saveTab(tab: Tab | null) {
     tab.pdfBytes       = bytes;
     tab._savedBytes    = null;
     tab.dirty          = false;
-    tab._cleanAnnotationsJSON = JSON.stringify([...annotations]);
     renderTabBar();
     updateTitleBar(tab);
     return true;
@@ -824,7 +816,6 @@ async function saveTabCopy(tab: Tab | null) {
     tab._suggestedName = null;
     tab.pdfBytes       = bytes;
     tab.dirty          = false;
-    tab._cleanAnnotationsJSON = JSON.stringify([...annotations]);
     renderTabBar();
     updateTitleBar(tab);
     return true;
@@ -850,16 +841,12 @@ function _patchAnnotatorForDirty(tab: Tab) {
   const proxy = new Proxy(orig, {
     set(target, prop, value, receiver) {
       const result = Reflect.set(target, prop, value, receiver);
-      if (typeof prop === 'string' && !isNaN(Number(prop))) {
-        JSON.stringify(target) === (tab._cleanAnnotationsJSON ?? '[]') ? clearDirty(tab) : markDirty(tab);
-      }
+      if (typeof prop === 'string' && !isNaN(Number(prop))) markDirty(tab);
       return result;
     },
     deleteProperty(target, prop) {
       const result = Reflect.deleteProperty(target, prop);
-      if (typeof prop === 'string' && !isNaN(Number(prop))) {
-        JSON.stringify(target) === (tab._cleanAnnotationsJSON ?? '[]') ? clearDirty(tab) : markDirty(tab);
-      }
+      if (typeof prop === 'string' && !isNaN(Number(prop))) markDirty(tab);
       return result;
     },
   });
