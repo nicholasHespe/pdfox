@@ -538,7 +538,7 @@ export class Annotator {
     ta.style.cssText = `
       position:        absolute;
       left:            ${left - 4}px;
-      top:             ${top + 6}px;
+      top:             ${top - fontSize / 2}px;
       min-width:       120px;
       min-height:      ${fontSize + 6}px;
       background:      transparent;
@@ -583,15 +583,18 @@ export class Annotator {
   // ── Hit testing ─────────────────────────────────────────────
 
   _hitTest(pageNum: number, nx: number, ny: number) {
+    const p = this.pages[pageNum - 1];
+    const w = p?.annotCanvas.width  ?? 1;
+    const h = p?.annotCanvas.height ?? 1;
     for (let i = this.annotations.length - 1; i >= 0; i--) {
       const a = this.annotations[i];
       if (a.pageNum !== pageNum) continue;
-      if (this._annotContains(a, nx, ny)) return i;
+      if (this._annotContains(a, nx, ny, w, h)) return i;
     }
     return -1;
   }
 
-  _annotContains(a: Annotation, nx: number, ny: number) {
+  _annotContains(a: Annotation, nx: number, ny: number, w: number, h: number) {
     const tol = 0.015;
     if (a.type === 'draw' || a.type === 'freeHighlight') {
       for (let i = 0; i < a.points.length - 1; i++) {
@@ -603,7 +606,16 @@ export class Annotator {
         ny >= r.y - tol && ny <= r.y + r.height + tol
       );
     } else if (a.type === 'text') {
-      return Math.abs(nx - a.x) < 0.15 && Math.abs(ny - a.y) < 0.06;
+      const scale = this.viewer?.scale ?? 1;
+      const fs    = a.fontSize * scale;
+      const lines = a.text.split('\n');
+      const lineH = (fs + 2) / h;
+      const totalH = lineH * lines.length;
+      const longestChars = Math.max(...lines.map(l => l.length), 1);
+      const textW = longestChars * fs * 0.6 / w;
+      const px = 4 / w, py = 4 / h; // small pixel tolerance
+      return nx >= a.x - px && nx <= a.x + textW + px &&
+             ny >= a.y - py && ny <= a.y + totalH + py;
     } else if (a.type === 'rect' || a.type === 'oval') {
       const x1 = Math.min(a.x1, a.x2), x2 = Math.max(a.x1, a.x2);
       const y1 = Math.min(a.y1, a.y2), y2 = Math.max(a.y1, a.y2);
