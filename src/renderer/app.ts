@@ -465,7 +465,7 @@ function renderTabBar() {
       e.preventDefault();
       e.stopPropagation();
       _tabContextMenuTab = t;
-      const hasDisk = !!(t.filePath && /[\\/]/.test(t.filePath));
+      const hasDisk = !!(t.filePath && /[\\/]/.test(t.filePath)) && !t.dirty;
       const btnCopy   = tabContextMenu.querySelector<HTMLButtonElement>('[data-tctx="copy-file"]')!;
       const btnReveal = tabContextMenu.querySelector<HTMLButtonElement>('[data-tctx="reveal"]')!;
       btnCopy.disabled   = !hasDisk;
@@ -845,7 +845,7 @@ async function saveTabCopy(tab: Tab | null) {
   const bytes       = await embedAnnotations(tab.pdfBytes, annotations, viewer);
   const defaultPath = (tab._suggestedDir && tab._suggestedName)
     ? tab._suggestedDir + '/' + tab._suggestedName
-    : undefined;
+    : tab.filePath ?? undefined;
   const res = await window.api.saveFileCopy(bytes.buffer as ArrayBuffer, defaultPath);
   if (res.ok) {
     tab.filePath       = res.filePath ?? null;
