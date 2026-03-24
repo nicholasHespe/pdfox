@@ -616,8 +616,8 @@ html, body {
 #viewer-scrollbar {
   position: absolute;
   right: 0;
-  top: 0;
-  bottom: 0;
+  top: 4px;
+  bottom: 4px;
   width: 10px;
   z-index: 15;
   display: none;
@@ -628,13 +628,37 @@ html, body {
   left: 2px;
   right: 2px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(180, 180, 180, 0.6);
   transition: background 0.1s;
   cursor: grab;
   min-height: 30px;
 }
 #viewer-scrollbar-thumb:hover,
-#viewer-scrollbar-thumb.dragging { background: rgba(255, 255, 255, 0.5); cursor: grabbing; }
+#viewer-scrollbar-thumb.dragging { background: rgba(200, 200, 200, 0.85); cursor: grabbing; }
+
+/* ── Horizontal custom scrollbar ─────────────────────────────── */
+#viewer-scrollbar-h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 10px;
+  z-index: 15;
+  display: none;
+  cursor: pointer;
+}
+#viewer-scrollbar-thumb-h {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 4px;
+  background: rgba(180, 180, 180, 0.6);
+  transition: background 0.1s;
+  cursor: grab;
+  min-width: 30px;
+}
+#viewer-scrollbar-thumb-h:hover,
+#viewer-scrollbar-thumb-h.dragging { background: rgba(200, 200, 200, 0.85); cursor: grabbing; }
 
 /* ── PDF page container ───────────────────────────────────────── */
 .viewer-pane {
@@ -648,12 +672,15 @@ html, body {
 }
 .viewer-pane::-webkit-scrollbar { display: none; } /* Chrome/Edge/Safari */
 .viewer-pane.active { display: block; }
+.viewer-pane.pan-active { cursor: grab; }
+.viewer-pane.pan-active.panning { cursor: grabbing; }
 
 .pdf-pages {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 16px 0;
+  align-items: flex-start;
+  min-width: 100%;
+  padding: 20px 0;
   gap: 12px;
 }
 
@@ -661,6 +688,7 @@ html, body {
   position: relative;
   box-shadow: 0 2px 8px rgba(0,0,0,0.5);
   background: #fff;
+  margin: 0 auto;
 }
 
 .pdf-canvas { display: block; }
@@ -897,7 +925,7 @@ html, body {
 
 /* ── Print ────────────────────────────────────────────────────── */
 @media print {
-  #topbar, #sidebar, #toc-panel, #empty-state, #viewer-scrollbar { display: none !important; }
+  #topbar, #sidebar, #toc-panel, #empty-state, #viewer-scrollbar, #viewer-scrollbar-h { display: none !important; }
   #content-area { position: static; overflow: visible; }
   #viewer-host  { position: static; overflow: visible; }
   .viewer-pane  { display: none; position: static; overflow: visible; }
@@ -935,6 +963,43 @@ html, body {
   text-align: left;
 }
 #context-menu button:hover { background: var(--accent); color: #fff; }
+#context-menu button:disabled { opacity: 0.4; cursor: default; }
+#context-menu button:disabled:hover { background: transparent; color: var(--text); }
+
+/* ── Tab context menu ──────────────────────────────────────────── */
+#tab-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bar-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  padding: 4px;
+  min-width: 160px;
+}
+#tab-context-menu.hidden { display: none; }
+
+#tab-context-menu button {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  text-align: left;
+}
+#tab-context-menu button:hover { background: var(--accent); color: #fff; }
+#tab-context-menu button:disabled { opacity: 0.4; cursor: default; }
+#tab-context-menu button:disabled:hover { background: transparent; color: var(--text); }
+
+.ctx-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 6px;
+}
 
 /* ── macOS platform adjustments ───────────────────────────────── */
 /* Hide custom win-controls — native traffic lights are used instead */

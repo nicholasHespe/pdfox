@@ -55,6 +55,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('close-tab-by-filepath', (_e: unknown, filePath: string) => callback(filePath));
   },
 
+  // Copy a file to the clipboard so it can be pasted into Explorer, email, etc.
+  copyFileToClipboard: (filePath: string) => ipcRenderer.invoke('copy-file-to-clipboard', filePath),
+
+  // Show the file in its containing folder
+  revealInExplorer: (filePath: string) => ipcRenderer.invoke('reveal-in-explorer', filePath),
+
   // Initiate a native OS file drag (for dragging into Outlook, Explorer, etc.)
   startDrag: (filePath: string) => ipcRenderer.send('start-drag', filePath),
 

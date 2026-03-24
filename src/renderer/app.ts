@@ -38,20 +38,37 @@ let _sbDragging        = false;
 let _sbDragStartY      = 0;
 let _sbDragStartScroll = 0;
 
+// Horizontal scrollbar drag state
+let _sbhDragging        = false;
+let _sbhDragStartX      = 0;
+let _sbhDragStartScroll = 0;
+
+// Pan tool drag state
+let _panDragging        = false;
+let _panStartX          = 0;
+let _panStartY          = 0;
+let _panStartScrollLeft = 0;
+let _panStartScrollTop  = 0;
+
 // Native file drag state (drag-to-external-app)
 let _nativeDrag: { filePath: string; x: number; y: number } | null = null; // { filePath, x, y } while tracking mousedown before threshold
 
 // Context for the close-confirm modal: null | { type:'window' } | { type:'tab', tab }
 let _closeContext: CloseContext = null;
 
+// Tab right-click context menu target
+let _tabContextMenuTab: Tab | null = null;
+
 // Window identity (obtained from main process at startup)
 let myWindowId: number | null = null;
 
 // ── DOM refs ───────────────────────────────────────────────────
 
-const sidebar              = document.getElementById('sidebar')!;
-const viewerScrollbar      = document.getElementById('viewer-scrollbar')!;
-const viewerScrollbarThumb = document.getElementById('viewer-scrollbar-thumb')!;
+const sidebar               = document.getElementById('sidebar')!;
+const viewerScrollbar       = document.getElementById('viewer-scrollbar')!;
+const viewerScrollbarThumb  = document.getElementById('viewer-scrollbar-thumb')!;
+const viewerScrollbarH      = document.getElementById('viewer-scrollbar-h')!;
+const viewerScrollbarThumbH = document.getElementById('viewer-scrollbar-thumb-h')!;
 const tabBar         = document.getElementById('tab-bar')!;
 const toolsPanel     = document.getElementById('tools-panel')!;
 const viewerHost     = document.getElementById('viewer-host')!;
@@ -70,6 +87,9 @@ const colorDot       = document.getElementById('color-dot')!;
 const colorPanel     = document.getElementById('color-panel')!;
 const titleFilename  = document.getElementById('title-filename')!;
 const contextMenu    = document.getElementById('context-menu')!;
+const ctxCut         = document.querySelector('[data-ctx="cut"]')   as HTMLButtonElement;
+const ctxPaste       = document.querySelector('[data-ctx="paste"]') as HTMLButtonElement;
+const tabContextMenu = document.getElementById('tab-context-menu')!;
 
 // ── Platform setup ─────────────────────────────────────────────
 
@@ -143,6 +163,64 @@ function _positionScrollbar() {
   _syncScrollbar();
 }
 
+// ── Horizontal scrollbar ───────────────────────────────────────
+
+function _syncScrollbarH() {
+  if (!activeTab) { viewerScrollbarH.style.display = 'none'; return; }
+  const pane    = activeTab.pane;
+  const scrollW = pane.scrollWidth;
+  const clientW = pane.clientWidth;
+  if (scrollW <= clientW) { viewerScrollbarH.style.display = 'none'; return; }
+  viewerScrollbarH.style.display = 'block';
+  const trackW      = viewerScrollbarH.clientWidth;
+  const thumbW      = Math.max(30, Math.round((clientW / scrollW) * trackW));
+  const maxScroll   = scrollW - clientW;
+  const maxThumbLeft = trackW - thumbW;
+  const thumbLeft   = Math.round((pane.scrollLeft / maxScroll) * maxThumbLeft);
+  viewerScrollbarThumbH.style.width = `${thumbW}px`;
+  viewerScrollbarThumbH.style.left  = `${thumbLeft}px`;
+}
+
+function _positionScrollbarH() {
+  const tocW = !tocPanel.classList.contains('hidden') ? tocPanel.offsetWidth : 0;
+  viewerScrollbarH.style.left  = `${sidebar.offsetWidth + 4}px`;
+  viewerScrollbarH.style.right = `${tocW + SCROLLBAR_GAP + 10 + 4}px`;
+  _syncScrollbarH();
+}
+
+// Pad pdf-pages so the document can be scrolled until its edges are visible
+// past the sidebar and TOC panel. Always applied so margin:auto centering works.
+function _updateHorizontalPadding() {
+  if (!activeTab) return;
+  const pane    = activeTab.pane;
+  const pagesEl = pane.querySelector('.pdf-pages') as HTMLElement | null;
+  if (!pagesEl) return;
+  const tocW = !tocPanel.classList.contains('hidden') ? tocPanel.offsetWidth : 0;
+  const edgePad = 20;
+  pagesEl.style.paddingLeft  = `${sidebar.offsetWidth + edgePad}px`;
+  pagesEl.style.paddingRight = `${tocW + edgePad}px`;
+}
+
+// Jump scroll on track click (not thumb)
+viewerScrollbarH.addEventListener('mousedown', (e) => {
+  if (e.target === viewerScrollbarThumbH || !activeTab) return;
+  const rect  = viewerScrollbarH.getBoundingClientRect();
+  const ratio = (e.clientX - rect.left) / rect.width;
+  activeTab.pane.scrollLeft = ratio * (activeTab.pane.scrollWidth - activeTab.pane.clientWidth);
+});
+
+// Thumb drag start
+viewerScrollbarThumbH.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  _sbhDragging        = true;
+  _sbhDragStartX      = e.clientX;
+  _sbhDragStartScroll = activeTab?.pane.scrollLeft ?? 0;
+  viewerScrollbarThumbH.classList.add('dragging');
+  document.body.style.userSelect = 'none';
+});
+
 // Jump scroll on track click (not thumb)
 viewerScrollbar.addEventListener('mousedown', (e) => {
   if (e.target === viewerScrollbarThumb || !activeTab) return;
@@ -180,9 +258,23 @@ function _hideContextMenu() {
   contextMenu.classList.add('hidden');
 }
 
+function _hideTabContextMenu() {
+  tabContextMenu.classList.add('hidden');
+  _tabContextMenuTab = null;
+}
+
 viewerHost.addEventListener('contextmenu', (e) => {
   if (!activeTab) return;
   e.preventDefault();
+
+  // Show Cut only when a cuttable annotation is selected; Paste when clipboard has content
+  const ann = activeTab.annotator;
+  const selectedAnn = ann && ann._selectedIdx !== null ? ann.annotations[ann._selectedIdx] : null;
+  const canCut = selectedAnn !== null && selectedAnn !== undefined &&
+    Annotator._cuttableTypes.includes(selectedAnn.type);
+  ctxCut.style.display   = canCut ? '' : 'none';
+  ctxPaste.style.display = (ann && ann._clipboard) ? '' : 'none';
+
   contextMenu.classList.remove('hidden');
   const menuW = contextMenu.offsetWidth  || 140;
   const menuH = contextMenu.offsetHeight || 90;
@@ -193,7 +285,8 @@ viewerHost.addEventListener('contextmenu', (e) => {
 });
 
 document.addEventListener('mousedown', (e) => {
-  if (!(e.target as Element)?.closest('#context-menu')) _hideContextMenu();
+  if (!(e.target as Element)?.closest('#context-menu'))     _hideContextMenu();
+  if (!(e.target as Element)?.closest('#tab-context-menu')) _hideTabContextMenu();
 });
 
 contextMenu.addEventListener('mousedown', (e) => {
@@ -202,6 +295,8 @@ contextMenu.addEventListener('mousedown', (e) => {
   e.preventDefault();
   _hideContextMenu();
   switch (btn.dataset.ctx) {
+    case 'cut':   activeTab?.annotator?.cut();   break;
+    case 'paste': activeTab?.annotator?.paste();  break;
     case 'copy':
       navigator.clipboard.writeText(window.getSelection()?.toString() ?? '');
       break;
@@ -215,6 +310,28 @@ contextMenu.addEventListener('mousedown', (e) => {
       finder.open();
       break;
     }
+  }
+});
+
+// ── Tab context menu ────────────────────────────────────────────
+
+tabContextMenu.addEventListener('mousedown', (e) => {
+  const btn = (e.target as Element)?.closest('[data-tctx]') as HTMLButtonElement | null;
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+  const tab = _tabContextMenuTab;
+  _hideTabContextMenu();
+  if (!tab) return;
+  switch (btn.dataset.tctx) {
+    case 'close':        requestCloseTab(tab); break;
+    case 'save':         saveTab(tab); break;
+    case 'save-as':      saveTabCopy(tab); break;
+    case 'print':        switchTab(tab); window.print(); break;
+    case 'copy-file':    window.api.copyFileToClipboard(tab.filePath!); break;
+    case 'reveal':       window.api.revealInExplorer(tab.filePath!); break;
+    case 'close-others':
+      [...tabs].filter(t => t !== tab).forEach(t => requestCloseTab(t));
+      break;
   }
 });
 
@@ -249,10 +366,14 @@ document.addEventListener('mousemove', (e) => {
   if (_resizingSidebar) {
     const w = Math.max(SIDEBAR_MIN, e.clientX);
     sidebar.style.width = w + 'px';
+    _positionScrollbarH();
+    _updateHorizontalPadding();
   }
   if (_resizingToc) {
     const w = Math.max(TOC_MIN, window.innerWidth - e.clientX);
     tocPanel.style.width = w + 'px';
+    _positionScrollbarH();
+    _updateHorizontalPadding();
   }
   if (_sbDragging && activeTab) {
     const pane       = activeTab.pane;
@@ -263,6 +384,23 @@ document.addEventListener('mousemove', (e) => {
     const dy         = e.clientY - _sbDragStartY;
     const maxScroll  = pane.scrollHeight - pane.clientHeight;
     pane.scrollTop   = _sbDragStartScroll + (dy / maxTravel) * maxScroll;
+  }
+  if (_sbhDragging && activeTab) {
+    const pane       = activeTab.pane;
+    const trackW     = viewerScrollbarH.clientWidth;
+    const thumbW     = viewerScrollbarThumbH.offsetWidth;
+    const maxTravel  = trackW - thumbW;
+    if (maxTravel <= 0) return;
+    const dx         = e.clientX - _sbhDragStartX;
+    const maxScroll  = pane.scrollWidth - pane.clientWidth;
+    pane.scrollLeft  = _sbhDragStartScroll + (dx / maxTravel) * maxScroll;
+  }
+  if (_panDragging && activeTab) {
+    const pane = activeTab.pane;
+    pane.scrollLeft = _panStartScrollLeft - (e.clientX - _panStartX);
+    pane.scrollTop  = _panStartScrollTop  - (e.clientY - _panStartY);
+    _syncScrollbar();
+    _syncScrollbarH();
   }
   if (_nativeDrag) {
     const dx = e.clientX - _nativeDrag.x;
@@ -281,6 +419,8 @@ document.addEventListener('mouseup', () => {
     sidebarResizeHandle.classList.remove('resizing');
     document.body.style.cursor     = '';
     document.body.style.userSelect = '';
+    _positionScrollbarH();
+    _updateHorizontalPadding();
   }
   if (_resizingToc) {
     _resizingToc = false;
@@ -289,11 +429,23 @@ document.addEventListener('mouseup', () => {
     document.body.style.cursor     = '';
     document.body.style.userSelect = '';
     _positionScrollbar();
+    _positionScrollbarH();
+    _updateHorizontalPadding();
   }
   _nativeDrag = null;
   if (_sbDragging) {
     _sbDragging = false;
     viewerScrollbarThumb.classList.remove('dragging');
+    document.body.style.userSelect = '';
+  }
+  if (_sbhDragging) {
+    _sbhDragging = false;
+    viewerScrollbarThumbH.classList.remove('dragging');
+    document.body.style.userSelect = '';
+  }
+  if (_panDragging && activeTab) {
+    _panDragging = false;
+    activeTab.pane.classList.remove('panning');
     document.body.style.userSelect = '';
   }
 });
@@ -429,6 +581,24 @@ function renderTabBar() {
       renderTabBar();
     });
 
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      _tabContextMenuTab = t;
+      const hasDisk = !!(t.filePath && /[\\/]/.test(t.filePath)) && !t.dirty;
+      const btnCopy   = tabContextMenu.querySelector<HTMLButtonElement>('[data-tctx="copy-file"]')!;
+      const btnReveal = tabContextMenu.querySelector<HTMLButtonElement>('[data-tctx="reveal"]')!;
+      btnCopy.disabled   = !hasDisk;
+      btnReveal.disabled = !hasDisk;
+      tabContextMenu.classList.remove('hidden');
+      const menuW = tabContextMenu.offsetWidth  || 160;
+      const menuH = tabContextMenu.offsetHeight || 200;
+      const left  = Math.min(e.clientX, window.innerWidth  - menuW - 4);
+      const top   = Math.min(e.clientY, window.innerHeight - menuH - 4);
+      tabContextMenu.style.left = `${Math.max(0, left)}px`;
+      tabContextMenu.style.top  = `${Math.max(0, top)}px`;
+    });
+
     tabBar.appendChild(el);
   });
 }
@@ -466,7 +636,8 @@ tabBar.addEventListener('drop', async (e) => {
   const filepath = e.dataTransfer!.getData('reamlet-tab-filepath');
   const sourceId = Number(e.dataTransfer!.getData('reamlet-tab-source-id'));
   const isDirty  = e.dataTransfer!.getData('reamlet-tab-dirty') === '1';
-  if (!filepath || sourceId === myWindowId) return; // same window handled by tab elements
+  if (!filepath) return;
+  if (sourceId === myWindowId) { _dropHandled = true; return; } // same window — prevent new-window fallback
 
   e.preventDefault();
   _dropHandled = true;
@@ -529,7 +700,12 @@ function switchTab(tab: Tab) {
   updatePageDisplay(tab);
   attachScrollListener(tab);
   _positionScrollbar();
+  _positionScrollbarH();
   finder.onTabSwitch();
+  if (tab._notBeenViewed) {
+    tab._notBeenViewed = false;
+    void fitWidth();
+  }
 }
 
 function closeTab(tab: Tab) {
@@ -674,6 +850,7 @@ async function _loadTabContent(tab: Tab) {
   }
   if (tab.loadingEl) { tab.loadingEl.remove(); tab.loadingEl = null; }
   tab.lastActive = Date.now(); // reset clock so freshly-loaded tabs don't immediately sleep
+  tab._notBeenViewed = true;
   renderTabBar();
   if (activeTab === tab) {
     syncToolButtons(tab.annotator!.tool);
@@ -682,6 +859,9 @@ async function _loadTabContent(tab: Tab) {
     renderToc(tab.outline);
     updatePageDisplay(tab);
     _syncScrollbar();
+    _positionScrollbarH();
+    tab._notBeenViewed = false;
+    await fitWidth();
   }
 }
 
@@ -795,7 +975,7 @@ async function saveTabCopy(tab: Tab | null) {
   const bytes       = await embedAnnotations(tab.pdfBytes, annotations, viewer);
   const defaultPath = (tab._suggestedDir && tab._suggestedName)
     ? tab._suggestedDir + '/' + tab._suggestedName
-    : undefined;
+    : tab.filePath ?? undefined;
   const res = await window.api.saveFileCopy(bytes.buffer as ArrayBuffer, defaultPath);
   if (res.ok) {
     tab.filePath       = res.filePath ?? null;
@@ -885,6 +1065,8 @@ async function _applyZoomNow(scale: number) {
   activeTab.annotator!.pages = v.pages;
   activeTab.annotator!.redrawAll();
   _syncScrollbar();
+  _updateHorizontalPadding();
+  _syncScrollbarH();
   finder.onZoom();
 }
 
@@ -932,9 +1114,24 @@ function updatePageDisplay(tab: Tab | null) {
 
 function attachScrollListener(tab: Tab) {
   if (_paneScrollCleanup) _paneScrollCleanup();
-  const handler = () => { updatePageDisplay(tab); _syncScrollbar(); };
-  tab.pane.addEventListener('scroll', handler, { passive: true });
-  _paneScrollCleanup = () => tab.pane.removeEventListener('scroll', handler);
+  const scrollHandler = () => { updatePageDisplay(tab); _syncScrollbar(); _syncScrollbarH(); };
+  const panHandler = (e: MouseEvent) => {
+    if (e.button !== 0 || activeTab?.annotator?.tool !== 'pan') return;
+    e.preventDefault();
+    _panDragging        = true;
+    _panStartX          = e.clientX;
+    _panStartY          = e.clientY;
+    _panStartScrollLeft = tab.pane.scrollLeft;
+    _panStartScrollTop  = tab.pane.scrollTop;
+    tab.pane.classList.add('panning');
+    document.body.style.userSelect = 'none';
+  };
+  tab.pane.addEventListener('scroll',     scrollHandler, { passive: true });
+  tab.pane.addEventListener('mousedown',  panHandler);
+  _paneScrollCleanup = () => {
+    tab.pane.removeEventListener('scroll',    scrollHandler);
+    tab.pane.removeEventListener('mousedown', panHandler);
+  };
 }
 
 function jumpToPage(pageNum: number) {
@@ -952,12 +1149,16 @@ function renderToc(outline: OutlineNode[] | null) {
     tocPanel.classList.add('hidden');
     contentArea.classList.remove('toc-open');
     _positionScrollbar();
+    _positionScrollbarH();
+    _updateHorizontalPadding();
     return;
   }
   tocPanel.classList.remove('hidden');
   contentArea.classList.add('toc-open');
   _buildTocNodes(outline, tocTree);
   _positionScrollbar();
+  _positionScrollbarH();
+  _updateHorizontalPadding();
 }
 
 function _buildTocNodes(items: OutlineNode[], container: HTMLElement) {
@@ -1016,6 +1217,7 @@ function syncToolButtons(tool: string) {
   document.querySelectorAll('.tool-btn').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset.tool === tool);
   });
+  if (activeTab) activeTab.pane.classList.toggle('pan-active', tool === 'pan');
 }
 
 function syncTextFormatButtons(annotator: Annotator) {
@@ -1109,6 +1311,14 @@ document.addEventListener('keydown', async (e) => {
   if (ctrl && e.key === '0') { e.preventDefault(); fitWidth(); return; }
   if (ctrl && e.key === 'z') { e.preventDefault(); activeTab?.annotator?.undo(); return; }
   if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); activeTab?.annotator?.redo(); return; }
+  if (ctrl && e.key === 'x') { e.preventDefault(); activeTab?.annotator?.cut(); return; }
+  if (ctrl && e.key === 'v') { e.preventDefault(); activeTab?.annotator?.paste(); return; }
+  if (ctrl && e.key === 'c') {
+    const ann = activeTab?.annotator;
+    if (ann && ann._selectedIdx !== null && Annotator._cuttableTypes.includes(ann.annotations[ann._selectedIdx]?.type)) {
+      e.preventDefault(); ann.copy(); return;
+    }
+  }
   if (ctrl && e.key === 'p') { e.preventDefault(); window.print(); return; }
   if (ctrl && e.key === 'r') { e.preventDefault(); if (activeTab) _applyZoomNow(activeTab.viewer.scale); return; }
   if (ctrl && e.key === 'f') { e.preventDefault(); finder.open(); return; }
@@ -1117,9 +1327,11 @@ document.addEventListener('keydown', async (e) => {
 
   if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
 
+  if (e.key === 'Delete') { activeTab?.annotator?.deleteSelected(); return; }
+
   const toolMap = {
     d: 'draw', h: 'highlight', t: 'text', Escape: 'select',
-    l: 'line', r: 'rect', o: 'oval', a: 'arrow', e: 'eraser',
+    l: 'line', r: 'rect', o: 'oval', a: 'arrow', e: 'eraser', p: 'pan',
   };
   const tool = (toolMap as Record<string, string>)[e.key];
   if (tool) {

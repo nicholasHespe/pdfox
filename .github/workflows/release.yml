@@ -52,6 +52,9 @@ jobs:
       - name: Compile TypeScript
         run: pnpm run build
 
+      - name: Build native messaging host
+        run: pnpm run build-native-host
+
       - name: Package Windows installer + portable
         run: pnpm exec electron-builder --win nsis portable --x64 --publish never
 

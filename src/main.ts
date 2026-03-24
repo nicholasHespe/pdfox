@@ -5,7 +5,8 @@
 
 import type { BrowserWindow as BW, NativeImage, IpcMainInvokeEvent, IpcMainEvent, Event as ElectronEvent } from 'electron';
 
-const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, shell } = require('electron');
+const { exec } = require('child_process');
 const path  = require('path');
 const fs    = require('fs');
 const os    = require('os');
@@ -214,6 +215,25 @@ ipcMain.on('open-devtools', (event: IpcMainEvent) => {
   BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
 });
 
+// Copy a file to the system clipboard via PowerShell so it can be pasted
+// into Windows Explorer, email clients, etc.
+ipcMain.handle('copy-file-to-clipboard', (_event: IpcMainInvokeEvent, filePath: string) => {
+  const escaped = filePath.replace(/'/g, "''");
+  const cmd = `powershell -command "Set-Clipboard -Path '${escaped}'"`;
+  return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    exec(cmd, (error: Error | null) => {
+      if (error) resolve({ ok: false, error: error.message });
+      else resolve({ ok: true });
+    });
+  });
+});
+
+// Show the file in its containing folder in Windows Explorer / Finder
+ipcMain.handle('reveal-in-explorer', (_event: IpcMainInvokeEvent, filePath: string) => {
+  shell.showItemInFolder(filePath);
+  return { ok: true };
+});
+
 // Read / write the extension ID in the native messaging host manifest.
 // The manifest lives next to the Reamlet exe (installed and portable builds).
 function getManifestPath(): string {
@@ -297,6 +317,24 @@ function getArgvTarget(argv: string[]): string | null {
   }
   return null;
 }
+
+// Delete files in %TEMP%\ReamletDownloads that are older than 24 hours.
+function _cleanupTempDownloads() {
+  const tempDir = path.join(os.tmpdir(), 'ReamletDownloads');
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  try {
+    const now = Date.now();
+    for (const file of fs.readdirSync(tempDir)) {
+      const filePath = path.join(tempDir, file);
+      try {
+        if (now - fs.statSync(filePath).mtimeMs > oneDayMs) fs.unlinkSync(filePath);
+      } catch { /* file in use or already gone */ }
+    }
+  } catch { /* dir doesn't exist yet */ }
+}
+
+_cleanupTempDownloads();
+setInterval(_cleanupTempDownloads, 60 * 60 * 1000);
 
 // Download a remote PDF to %TEMP%\ReamletDownloads and return the local path.
 // Follows up to 5 redirects. Rejects on HTTP errors or network failures.
