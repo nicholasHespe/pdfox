@@ -1078,12 +1078,16 @@ function renderToc(outline: OutlineNode[] | null) {
     tocPanel.classList.add('hidden');
     contentArea.classList.remove('toc-open');
     _positionScrollbar();
+    _positionScrollbarH();
+    _updateHorizontalPadding();
     return;
   }
   tocPanel.classList.remove('hidden');
   contentArea.classList.add('toc-open');
   _buildTocNodes(outline, tocTree);
   _positionScrollbar();
+  _positionScrollbarH();
+  _updateHorizontalPadding();
 }
 
 function _buildTocNodes(items: OutlineNode[], container: HTMLElement) {
