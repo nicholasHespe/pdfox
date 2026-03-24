@@ -134,6 +134,14 @@
           <path d="M6.5 17.5l4-4"/>
         </svg>
       </button>
+
+      <span class="sep"></span>
+
+      <button id="tool-pan" class="tool-btn" title="Pan (P)" data-tool="pan">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 11V8a2 2 0 0 0-4 0v1a2 2 0 0 0-4 0V7a2 2 0 0 0-4 0v6l-1.5-1.5a2 2 0 0 0-2.83 2.83L6 20h12v-3a4 4 0 0 0-4-4h4z"/>
+        </svg>
+      </button>
     </div>
 
     <!-- CENTER: page navigation -->
@@ -209,6 +217,11 @@
       <div id="empty-state">
         <p>No file open.<br>Press <kbd>Ctrl+O</kbd> to open a PDF.</p>
       </div>
+    </div>
+
+    <!-- Horizontal scrollbar (shown only when content overflows horizontally) -->
+    <div id="viewer-scrollbar-h">
+      <div id="viewer-scrollbar-thumb-h"></div>
     </div>
 
     <!-- Left sidebar: permanent overlay -->
@@ -363,6 +376,19 @@
     <button data-ctx="copy">Copy</button>
     <button data-ctx="highlight">Highlight</button>
     <button data-ctx="find">Find</button>
+  </div>
+
+  <!-- ── Tab context menu ──────────────────────────────────────── -->
+  <div id="tab-context-menu" class="hidden">
+    <button data-tctx="close">Close</button>
+    <button data-tctx="save">Save</button>
+    <button data-tctx="save-as">Save As…</button>
+    <button data-tctx="print">Print</button>
+    <div class="ctx-sep"></div>
+    <button data-tctx="copy-file">Copy</button>
+    <button data-tctx="reveal">Open in Explorer</button>
+    <div class="ctx-sep"></div>
+    <button data-tctx="close-others">Close Other Tabs</button>
   </div>
 
   <script type="module" src="../out/renderer/app.js"></script>

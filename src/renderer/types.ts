@@ -86,6 +86,7 @@ export interface Tab {
   _suggestedName?: string | null;
   _savedBytes?: Uint8Array | null;
   _findCache?: Map<number, FindCacheEntry>;
+  _notBeenViewed?: boolean;
 }
 
 // ── CloseContext ──────────────────────────────────────────────

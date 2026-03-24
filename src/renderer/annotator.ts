@@ -370,7 +370,14 @@ export class Annotator {
         this._redrawPage(p, pageNum);
 
       } else if (this.tool === 'text') {
-        this._placeTextBox(p, pageNum, this._canvasPos(canvas, e));
+        const [cx, cy] = this._canvasPos(canvas, e);
+        const w = canvas.width, h = canvas.height;
+        const idx = this._hitTest(pageNum, cx / w, cy / h);
+        if (idx >= 0 && this.annotations[idx].type === 'text') {
+          this._editTextBox(p, pageNum, idx);
+        } else {
+          this._placeTextBox(p, pageNum, [cx, cy]);
+        }
 
       } else if (this.tool === 'eraser' && this._erasing) {
         this._erasing = false;
@@ -547,8 +554,9 @@ export class Annotator {
     const weight   = this.textBold      ? 'bold'      : 'normal';
     const decor    = this.textUnderline ? 'underline' : 'none';
 
+    const scale = this.viewer?.scale ?? 1;
     this._openTextarea(wrapper, cx * scaleX, cy * scaleY, '', {
-      fontSize, weight, decor, color: this.color,
+      fontSize: fontSize * scale, weight, decor, color: this.color,
       onCommit: (text) => {
         if (!text) return;
         const annot: TextAnnotation = {
@@ -585,8 +593,9 @@ export class Annotator {
     const weight = ann.bold      ? 'bold'      : 'normal';
     const decor  = ann.underline ? 'underline' : 'none';
 
+    const scale = this.viewer?.scale ?? 1;
     this._openTextarea(wrapper, ann.x * w * scaleX, ann.y * h * scaleY, ann.text, {
-      fontSize: ann.fontSize, weight, decor, color: ann.color,
+      fontSize: ann.fontSize * scale, weight, decor, color: ann.color,
       onCommit: (text) => {
         const newAnn = { ...ann, text };
         if (text) {
@@ -608,10 +617,10 @@ export class Annotator {
     ta.value = initialText;
     ta.style.cssText = `
       position:        absolute;
-      left:            ${left}px;
-      top:             ${top}px;
-      min-width:       120px;
-      min-height:      ${fontSize + 6}px;
+      left:            ${left - 4}px;
+      top:             ${top - fontSize / 2}px;
+      width:           ${Math.max(fontSize * 8, 80)}px;
+      height:          ${fontSize + 8}px;
       background:      transparent;
       border:          1px dashed rgba(128,128,128,0.6);
       font:            ${weight} ${fontSize}px system-ui, sans-serif;
@@ -654,15 +663,18 @@ export class Annotator {
   // ── Hit testing ─────────────────────────────────────────────
 
   _hitTest(pageNum: number, nx: number, ny: number) {
+    const p = this.pages[pageNum - 1];
+    const w = p?.annotCanvas.width  ?? 1;
+    const h = p?.annotCanvas.height ?? 1;
     for (let i = this.annotations.length - 1; i >= 0; i--) {
       const a = this.annotations[i];
       if (a.pageNum !== pageNum) continue;
-      if (this._annotContains(a, nx, ny)) return i;
+      if (this._annotContains(a, nx, ny, w, h)) return i;
     }
     return -1;
   }
 
-  _annotContains(a: Annotation, nx: number, ny: number) {
+  _annotContains(a: Annotation, nx: number, ny: number, w: number, h: number) {
     const tol = 0.015;
     if (a.type === 'draw' || a.type === 'freeHighlight') {
       for (let i = 0; i < a.points.length - 1; i++) {
@@ -674,7 +686,16 @@ export class Annotator {
         ny >= r.y - tol && ny <= r.y + r.height + tol
       );
     } else if (a.type === 'text') {
-      return Math.abs(nx - a.x) < 0.15 && Math.abs(ny - a.y) < 0.06;
+      const scale = this.viewer?.scale ?? 1;
+      const fs    = a.fontSize * scale;
+      const lines = a.text.split('\n');
+      const lineH = (fs + 2) / h;
+      const totalH = lineH * lines.length;
+      const longestChars = Math.max(...lines.map(l => l.length), 1);
+      const textW = longestChars * fs * 0.6 / w;
+      const px = 4 / w, py = 4 / h; // small pixel tolerance
+      return nx >= a.x - px && nx <= a.x + textW + px &&
+             ny >= a.y - py && ny <= a.y + totalH + py;
     } else if (a.type === 'rect' || a.type === 'oval') {
       const x1 = Math.min(a.x1, a.x2), x2 = Math.max(a.x1, a.x2);
       const y1 = Math.min(a.y1, a.y2), y2 = Math.max(a.y1, a.y2);
@@ -737,7 +758,8 @@ export class Annotator {
       const allY = ann.rects.flatMap(r => [r.y * h, (r.y + r.height) * h]);
       return { x: Math.min(...allX), y: Math.min(...allY), w: Math.max(...allX) - Math.min(...allX), h: Math.max(...allY) - Math.min(...allY) };
     } else if (ann.type === 'text') {
-      return { x: ann.x * w - 2, y: ann.y * h - ann.fontSize - 2, w: 120, h: ann.fontSize * 2 + 4 };
+      const fs = ann.fontSize * (this.viewer?.scale ?? 1);
+      return { x: ann.x * w - 2, y: ann.y * h - 2, w: 120, h: fs * 1.5 + 4 };
     } else if (ann.type === 'rect' || ann.type === 'oval' || ann.type === 'line' || ann.type === 'arrow') {
       const x1 = Math.min(ann.x1, ann.x2) * w, x2 = Math.max(ann.x1, ann.x2) * w;
       const y1 = Math.min(ann.y1, ann.y2) * h, y2 = Math.max(ann.y1, ann.y2) * h;
@@ -876,16 +898,18 @@ export class Annotator {
       });
 
     } else if (annot.type === 'text') {
+      const scale  = this.viewer?.scale ?? 1;
+      const fs     = annot.fontSize * scale;
       const weight = annot.bold ? 'bold ' : '';
       ctx.fillStyle = annot.color;
-      ctx.font      = `${weight}${annot.fontSize}px system-ui, sans-serif`;
+      ctx.font      = `${weight}${fs}px system-ui, sans-serif`;
       annot.text.split('\n').forEach((line: string, i: number) => {
         const x = annot.x * w;
-        const y = annot.y * h + i * (annot.fontSize + 2) + annot.fontSize;
+        const y = annot.y * h + i * (fs + 2) + fs / 2 + 2;
         ctx.fillText(line, x, y);
         if (annot.underline) {
           const metrics = ctx.measureText(line);
-          ctx.fillRect(x, y + 2, metrics.width, Math.max(1, annot.fontSize / 12));
+          ctx.fillRect(x, y + 2, metrics.width, Math.max(1, fs / 12));
         }
       });
 
@@ -917,6 +941,7 @@ export class Annotator {
       oval:      'crosshair',
       arrow:     'crosshair',
       eraser:    'cell',
+      pan:       'inherit', // pane-level cursor handles grab/grabbing
     };
     this.pages.forEach(p => {
       p.annotCanvas.style.cursor = (cursors as Record<string, string>)[this.tool] || 'default';
