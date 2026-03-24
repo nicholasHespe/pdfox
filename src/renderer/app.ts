@@ -623,7 +623,8 @@ tabBar.addEventListener('drop', async (e) => {
   const filepath = e.dataTransfer!.getData('reamlet-tab-filepath');
   const sourceId = Number(e.dataTransfer!.getData('reamlet-tab-source-id'));
   const isDirty  = e.dataTransfer!.getData('reamlet-tab-dirty') === '1';
-  if (!filepath || sourceId === myWindowId) return; // same window handled by tab elements
+  if (!filepath) return;
+  if (sourceId === myWindowId) { _dropHandled = true; return; } // same window — prevent new-window fallback
 
   e.preventDefault();
   _dropHandled = true;
