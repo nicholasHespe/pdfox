@@ -298,6 +298,24 @@ function getArgvTarget(argv: string[]): string | null {
   return null;
 }
 
+// Delete files in %TEMP%\ReamletDownloads that are older than 24 hours.
+function _cleanupTempDownloads() {
+  const tempDir = path.join(os.tmpdir(), 'ReamletDownloads');
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  try {
+    const now = Date.now();
+    for (const file of fs.readdirSync(tempDir)) {
+      const filePath = path.join(tempDir, file);
+      try {
+        if (now - fs.statSync(filePath).mtimeMs > oneDayMs) fs.unlinkSync(filePath);
+      } catch { /* file in use or already gone */ }
+    }
+  } catch { /* dir doesn't exist yet */ }
+}
+
+_cleanupTempDownloads();
+setInterval(_cleanupTempDownloads, 60 * 60 * 1000);
+
 // Download a remote PDF to %TEMP%\ReamletDownloads and return the local path.
 // Follows up to 5 redirects. Rejects on HTTP errors or network failures.
 function downloadPdfToTemp(url: string, redirectsLeft = 5): Promise<string> {

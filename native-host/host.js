@@ -87,6 +87,29 @@ function findReamlet() {
   return { found: null, checked: candidates };
 }
 
+// ── Helpers ───────────────────────────────────────────────────
+
+const os = require('os');
+
+function isLocalPath(s) {
+  // Windows absolute paths: C:\... or UNC paths \\...
+  return /^[A-Za-z]:\\/.test(s) || s.startsWith('\\\\');
+}
+
+// Move a file into %TEMP%\ReamletDownloads, returning the new path.
+// Falls back to the original path on any error.
+function moveToTemp(filePath) {
+  try {
+    const tempDir = path.join(os.tmpdir(), 'ReamletDownloads');
+    fs.mkdirSync(tempDir, { recursive: true });
+    const dest = path.join(tempDir, path.basename(filePath));
+    fs.renameSync(filePath, dest);
+    return dest;
+  } catch {
+    return filePath;
+  }
+}
+
 // ── Message handler ───────────────────────────────────────────
 
 function handleMessage(msg) {
@@ -102,7 +125,11 @@ function handleMessage(msg) {
     return;
   }
 
-  const args = background ? [url, '--background'] : [url];
+  // If the extension staged a local file, move it into the shared temp folder
+  // so Reamlet's periodic cleanup can manage it alongside URL-based downloads.
+  const target = isLocalPath(url) ? moveToTemp(url) : url;
+
+  const args = background ? [target, '--background'] : [target];
   const child = spawn(reamletPath, args, {
     detached: true,
     stdio: 'ignore',
