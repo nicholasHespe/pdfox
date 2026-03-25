@@ -938,7 +938,8 @@ html, body {
 }
 
 /* ── Context menu ─────────────────────────────────────────────── */
-#context-menu {
+#context-menu,
+#input-ctx-menu {
   position: fixed;
   z-index: 1000;
   background: var(--bar-bg);
@@ -948,9 +949,11 @@ html, body {
   padding: 4px;
   min-width: 140px;
 }
-#context-menu.hidden { display: none; }
+#context-menu.hidden,
+#input-ctx-menu.hidden { display: none; }
 
-#context-menu button {
+#context-menu button,
+#input-ctx-menu button {
   display: block;
   width: 100%;
   background: transparent;
@@ -962,9 +965,12 @@ html, body {
   border-radius: 3px;
   text-align: left;
 }
-#context-menu button:hover { background: var(--accent); color: #fff; }
-#context-menu button:disabled { opacity: 0.4; cursor: default; }
-#context-menu button:disabled:hover { background: transparent; color: var(--text); }
+#context-menu button:hover,
+#input-ctx-menu button:hover { background: var(--accent); color: #fff; }
+#context-menu button:disabled,
+#input-ctx-menu button:disabled { opacity: 0.4; cursor: default; }
+#context-menu button:disabled:hover,
+#input-ctx-menu button:disabled:hover { background: transparent; color: var(--text); }
 
 /* ── Tab context menu ──────────────────────────────────────────── */
 #tab-context-menu {

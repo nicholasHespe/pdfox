@@ -87,6 +87,7 @@ const colorDot       = document.getElementById('color-dot')!;
 const colorPanel     = document.getElementById('color-panel')!;
 const titleFilename  = document.getElementById('title-filename')!;
 const contextMenu    = document.getElementById('context-menu')!;
+const inputCtxMenu   = document.getElementById('input-ctx-menu')!;
 const ctxCut         = document.querySelector('[data-ctx="cut"]')   as HTMLButtonElement;
 const ctxPaste       = document.querySelector('[data-ctx="paste"]') as HTMLButtonElement;
 const tabContextMenu = document.getElementById('tab-context-menu')!;
@@ -287,6 +288,7 @@ viewerHost.addEventListener('contextmenu', (e) => {
 document.addEventListener('mousedown', (e) => {
   if (!(e.target as Element)?.closest('#context-menu'))     _hideContextMenu();
   if (!(e.target as Element)?.closest('#tab-context-menu')) _hideTabContextMenu();
+  if (!(e.target as Element)?.closest('#input-ctx-menu'))   inputCtxMenu.classList.add('hidden');
 });
 
 contextMenu.addEventListener('mousedown', (e) => {
@@ -1309,6 +1311,8 @@ document.addEventListener('keydown', async (e) => {
   if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoom(0.1); return; }
   if (ctrl && e.key === '-') { e.preventDefault(); zoom(-0.1); return; }
   if (ctrl && e.key === '0') { e.preventDefault(); fitWidth(); return; }
+  if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
   if (ctrl && e.key === 'z') { e.preventDefault(); activeTab?.annotator?.undo(); return; }
   if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); activeTab?.annotator?.redo(); return; }
   if (ctrl && e.key === 'x') { e.preventDefault(); activeTab?.annotator?.cut(); return; }
@@ -1435,6 +1439,41 @@ document.getElementById('ext-id-save')!.addEventListener('click', async () => {
     document.getElementById('ext-id-modal')!.classList.add('hidden');
   } else {
     alert('Failed to save: ' + result.error);
+  }
+});
+
+document.getElementById('ext-id-input')!.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  inputCtxMenu.classList.remove('hidden');
+  const menuW = inputCtxMenu.offsetWidth  || 120;
+  const menuH = inputCtxMenu.offsetHeight || 80;
+  inputCtxMenu.style.left = `${Math.max(0, Math.min(e.clientX, window.innerWidth  - menuW - 4))}px`;
+  inputCtxMenu.style.top  = `${Math.max(0, Math.min(e.clientY, window.innerHeight - menuH - 4))}px`;
+});
+
+inputCtxMenu.addEventListener('mousedown', (e) => {
+  const btn = (e.target as Element)?.closest('[data-input-ctx]') as HTMLElement | null;
+  if (!btn) return;
+  e.preventDefault();
+  inputCtxMenu.classList.add('hidden');
+  const input = document.getElementById('ext-id-input') as HTMLInputElement;
+  input.focus();
+  const start = input.selectionStart ?? 0;
+  const end   = input.selectionEnd   ?? 0;
+  switch (btn.dataset.inputCtx) {
+    case 'cut':
+      navigator.clipboard.writeText(input.value.substring(start, end));
+      input.setRangeText('', start, end, 'end');
+      break;
+    case 'copy':
+      navigator.clipboard.writeText(input.value.substring(start, end));
+      break;
+    case 'paste':
+      navigator.clipboard.readText().then(text => {
+        input.setRangeText(text, input.selectionStart ?? 0, input.selectionEnd ?? 0, 'end');
+      });
+      break;
   }
 });
 
