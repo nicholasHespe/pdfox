@@ -117,6 +117,38 @@ export class Annotator {
     this.pages.forEach((p, idx) => this._redrawPage(p, idx + 1));
   }
 
+  /**
+   * Transform stored annotation coordinates to match a 90° CW rotation applied
+   * to the given page (or all pages when pageNum is null).
+   * Must be called before redrawAll() / page re-render after rotation.
+   */
+  rotateAnnotations(pageNum: number | null, cwDegrees: number) {
+    const steps = (Math.round(cwDegrees / 90) % 4 + 4) % 4;
+    const targets = this.annotations.filter(a => pageNum === null || a.pageNum === pageNum);
+    for (let s = 0; s < steps; s++) {
+      for (const ann of targets) {
+        if (ann.type === 'draw' || ann.type === 'freeHighlight') {
+          ann.points = (ann.points as [number, number][]).map(([nx, ny]) => [1 - ny, nx]);
+        } else if (ann.type === 'highlight') {
+          ann.rects = ann.rects.map(r => ({
+            x: 1 - (r.y + r.height),
+            y: r.x,
+            width: r.height,
+            height: r.width,
+          }));
+        } else if (ann.type === 'text') {
+          const { x, y } = ann;
+          ann.x = 1 - y;
+          ann.y = x;
+        } else if (ann.type === 'line' || ann.type === 'arrow' || ann.type === 'rect' || ann.type === 'oval') {
+          const { x1, y1, x2, y2 } = ann;
+          ann.x1 = 1 - y1; ann.y1 = x1;
+          ann.x2 = 1 - y2; ann.y2 = x2;
+        }
+      }
+    }
+  }
+
   undo() {
     if (this._histIdx <= 0) return;
     this._histIdx--;

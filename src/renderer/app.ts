@@ -1095,8 +1095,10 @@ async function fitHeight() {
 async function rotate(singlePage: boolean) {
   if (!activeTab) return;
   const v = activeTab.viewer;
+  const targetPage = singlePage ? v.getVisiblePageNum() : null;
   if (singlePage) await v.rotatePage(v.getVisiblePageNum(), 90);
   else            await v.rotateAll(90);
+  activeTab.annotator!.rotateAnnotations(targetPage, 90);
   activeTab.annotator!.pages = v.pages;
   activeTab.annotator!.redrawAll();
   activeTab.annotator!.setTool(activeTab.annotator!.tool);
