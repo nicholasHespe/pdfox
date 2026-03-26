@@ -455,6 +455,16 @@ export class PDFViewer {
     // PDF.js v4 sizes the text layer via calc(var(--scale-factor) * N px)
     wrapper.style.setProperty('--scale-factor', String(this.scale));
 
+    // Preserve old canvas content before clearing so the browser never shows
+    // a blank canvas between the resize and the render completing.
+    let oldSnapshot: HTMLCanvasElement | null = null;
+    if (canvas.width > 0 && canvas.height > 0) {
+      oldSnapshot = document.createElement('canvas');
+      oldSnapshot.width  = canvas.width;
+      oldSnapshot.height = canvas.height;
+      oldSnapshot.getContext('2d')!.drawImage(canvas, 0, 0);
+    }
+
     canvas.width  = viewport.width;
     canvas.height = viewport.height;
 
@@ -464,6 +474,14 @@ export class PDFViewer {
 
     // Render PDF content
     const ctx = canvas.getContext('2d')!;
+
+    // Draw scaled old content as a placeholder until the real render finishes.
+    // page.render() draws on top and fully replaces it for opaque PDF pages.
+    if (oldSnapshot) {
+      ctx.drawImage(oldSnapshot, 0, 0, viewport.width, viewport.height);
+      oldSnapshot = null;
+    }
+
     await page.render({ canvasContext: ctx, viewport }).promise;
 
     // Render text layer for selection (PDF.js 4.x class-based API)
