@@ -32,6 +32,7 @@ const _closedTabStack: { filePath: string }[] = [];
 // Zoom debounce state
 let _zoomTimer: ReturnType<typeof setTimeout> | null = null; // setTimeout handle for deferred re-render
 let _zoomTarget: number | null = null; // accumulated target scale while debounce is pending
+let _zoomCursor: { x: number; y: number } | null = null; // cursor pane-relative coords at zoom start
 
 // Custom scrollbar drag state
 let _sbDragging        = false;
@@ -1026,7 +1027,7 @@ function _patchAnnotatorForDirty(tab: Tab) {
 
 // Immediately apply a CSS scale transform to the page container for visual
 // feedback, then re-render at the true scale after a 250 ms debounce.
-function zoom(delta: number) {
+function zoom(delta: number, cursorX?: number, cursorY?: number) {
   if (!activeTab) return;
   const v        = activeTab.viewer;
   const newScale = Math.max(0.25, Math.min(5,
@@ -1037,8 +1038,27 @@ function zoom(delta: number) {
   const pagesEl = activeTab.pane.querySelector('.pdf-pages') as HTMLElement | null;
   if (pagesEl) {
     const ratio = newScale / v.scale;
-    pagesEl.style.transformOrigin = 'top center';
-    pagesEl.style.transform       = `scale(${ratio})`;
+
+    // Capture cursor position once per gesture (don't overwrite if debounce is already running)
+    if (cursorX !== undefined && cursorY !== undefined && _zoomCursor === null) {
+      const pane     = activeTab.pane;
+      const paneRect = pane.getBoundingClientRect();
+      _zoomCursor = {
+        x: Math.max(0, Math.min(pane.clientWidth,  cursorX - paneRect.left)),
+        y: Math.max(0, Math.min(pane.clientHeight, cursorY - paneRect.top)),
+      };
+    }
+
+    if (_zoomCursor !== null) {
+      const pane    = activeTab.pane;
+      const originX = pane.scrollLeft + _zoomCursor.x - pagesEl.offsetLeft;
+      const originY = pane.scrollTop  + _zoomCursor.y - pagesEl.offsetTop;
+      pagesEl.style.transformOrigin = `${originX}px ${originY}px`;
+    } else {
+      pagesEl.style.transformOrigin = 'top center';
+    }
+
+    pagesEl.style.transform = `scale(${ratio})`;
   }
 
   // Debounce: wait until the user stops zooming, then do the real re-render
@@ -1062,8 +1082,20 @@ async function _applyZoomNow(scale: number) {
   const pagesEl = activeTab.pane.querySelector('.pdf-pages') as HTMLElement | null;
   if (pagesEl) pagesEl.style.transform = '';
 
-  const v = activeTab.viewer;
+  const v        = activeTab.viewer;
+  const pane     = activeTab.pane;
+  const oldScale = v.scale;
+  const cursor   = _zoomCursor;
+  _zoomCursor    = null;
+
   await v.setZoom(scale);
+
+  if (cursor !== null) {
+    const ratio     = scale / oldScale;
+    pane.scrollLeft = (pane.scrollLeft + cursor.x) * ratio - cursor.x;
+    pane.scrollTop  = (pane.scrollTop  + cursor.y) * ratio - cursor.y;
+  }
+
   activeTab.annotator!.pages = v.pages;
   activeTab.annotator!.redrawAll();
   activeTab.annotator!.setTool(activeTab.annotator!.tool);
@@ -1300,7 +1332,7 @@ pageInput.addEventListener('change', () => jumpToPage(Number(pageInput.value)));
 viewerHost.addEventListener('wheel', (e) => {
   if (!e.ctrlKey) return;
   e.preventDefault();
-  zoom(e.deltaY < 0 ? 0.1 : -0.1);
+  zoom(e.deltaY < 0 ? 0.1 : -0.1, e.clientX, e.clientY);
 }, { passive: false });
 
 // ── Keyboard shortcuts ─────────────────────────────────────────
