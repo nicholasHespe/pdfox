@@ -449,6 +449,10 @@ export class PDFViewer {
       this.pages[idx] = { wrapper, canvas, textDiv, annotCanvas, formLayer, viewportTransform: viewport.transform };
     }
 
+    // Hide the wrapper while the canvas is blank so the browser never paints
+    // a blank hole between the canvas clear and the render completing.
+    wrapper.style.opacity = '0';
+
     // Resize wrapper and canvases to match viewport
     wrapper.style.width  = `${viewport.width}px`;
     wrapper.style.height = `${viewport.height}px`;
@@ -465,6 +469,7 @@ export class PDFViewer {
     // Render PDF content
     const ctx = canvas.getContext('2d')!;
     await page.render({ canvasContext: ctx, viewport }).promise;
+    wrapper.style.opacity = '';
 
     // Render text layer for selection (PDF.js 4.x class-based API)
     // setLayerDimensions() inside TextLayer constructor sets width/height via --scale-factor
