@@ -1079,21 +1079,38 @@ async function _applyZoomNow(scale: number) {
   _zoomTimer  = null;
   _zoomTarget = null;
 
-  const pagesEl = activeTab.pane.querySelector('.pdf-pages') as HTMLElement | null;
-  if (pagesEl) pagesEl.style.transform = '';
-
   const v        = activeTab.viewer;
   const pane     = activeTab.pane;
   const oldScale = v.scale;
   const cursor   = _zoomCursor;
   _zoomCursor    = null;
 
+  // Capture scroll snapshot before the CSS transform is removed so the
+  // pre-scroll and final-scroll calculations both use the committed position.
+  const prevScrollLeft = pane.scrollLeft;
+  const prevScrollTop  = pane.scrollTop;
+
+  const pagesEl = activeTab.pane.querySelector('.pdf-pages') as HTMLElement | null;
+  if (pagesEl) pagesEl.style.transform = '';
+
+  // Pre-scroll synchronously (before any await) so _getVisibleSet() inside
+  // setZoom renders the pages near the cursor first.
+  // Zoom-out: new scroll is smaller and always in bounds.
+  // Zoom-in: new scroll may exceed current max and is browser-clamped to the
+  //   bottom of the old layout, which is still far better than staying at 0.
+  if (cursor !== null) {
+    const ratio = scale / oldScale;
+    pane.scrollLeft = Math.max(0, (prevScrollLeft + cursor.x) * ratio - cursor.x);
+    pane.scrollTop  = Math.max(0, (prevScrollTop  + cursor.y) * ratio - cursor.y);
+  }
+
   await v.setZoom(scale);
 
+  // Final exact correction now that content is properly sized.
   if (cursor !== null) {
-    const ratio     = scale / oldScale;
-    pane.scrollLeft = (pane.scrollLeft + cursor.x) * ratio - cursor.x;
-    pane.scrollTop  = (pane.scrollTop  + cursor.y) * ratio - cursor.y;
+    const ratio = scale / oldScale;
+    pane.scrollLeft = Math.max(0, (prevScrollLeft + cursor.x) * ratio - cursor.x);
+    pane.scrollTop  = Math.max(0, (prevScrollTop  + cursor.y) * ratio - cursor.y);
   }
 
   activeTab.annotator!.pages = v.pages;
