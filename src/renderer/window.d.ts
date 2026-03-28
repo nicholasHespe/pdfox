@@ -20,13 +20,13 @@ interface Window {
     openPrintPreview:       (filePath: string)                                         => Promise<{ ok: boolean; error?: string }>;
     onPdfData:              (callback: (data: { buffer: ArrayBuffer }) => void)        => void;
     getPrinters:            ()                                                          => Promise<{ name: string; isDefault: boolean }[]>;
-    openPrinterPreferences: (printerName: string)                                      => Promise<{ ok: boolean }>;
+    openPrinterPreferences: (printerName: string)                                      => Promise<{ ok: boolean; error?: string }>;
     executePrint: (options: {
       deviceName:  string;
       copies:      number;
       color:       boolean;
       collate:     boolean;
-      duplexMode:  string;
+      duplexMode:  'simplex' | 'longEdge' | 'shortEdge';
       scaleFactor: number;
       landscape:   boolean;
     }) => Promise<{ ok: boolean; error?: string }>;
