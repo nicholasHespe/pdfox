@@ -2028,12 +2028,15 @@ function _drawWatermarkPreview() {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(mx, my, pw, ph);
 
-  const text     = (document.getElementById('watermark-text')     as HTMLInputElement).value.trim() || 'Preview';
+  const rawText  = (document.getElementById('watermark-text')     as HTMLTextAreaElement).value;
   const pdfSize  = parseFloat((document.getElementById('watermark-fontsize') as HTMLInputElement).value) || 72;
   const opacity  = parseFloat((document.getElementById('watermark-opacity')  as HTMLInputElement).value) / 100;
   const angle    = parseFloat((document.getElementById('watermark-angle')    as HTMLInputElement).value) || 0;
+  const lines    = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const preview  = lines.length > 0 ? lines : ['Preview'];
 
-  const canvasFs = Math.max(6, Math.round(pdfSize * pw / 612));
+  const canvasFs   = Math.max(6, Math.round(pdfSize * pw / 612));
+  const lineHeight = canvasFs * 1.3;
 
   ctx.save();
   ctx.globalAlpha  = opacity;
@@ -2043,7 +2046,10 @@ function _drawWatermarkPreview() {
   ctx.textBaseline = 'middle';
   ctx.translate(mx + pw / 2, my + ph / 2);
   ctx.rotate(-angle * Math.PI / 180); // negative to match pdf-lib CCW convention
-  ctx.fillText(text, 0, 0);
+  preview.forEach((line, i) => {
+    const yOffset = (i - (preview.length - 1) / 2) * lineHeight;
+    ctx.fillText(line, 0, yOffset);
+  });
   ctx.restore();
 }
 
@@ -2063,7 +2069,7 @@ _wmOpacityInput.addEventListener('input', () => {
   _wmOpacityVal.textContent = _wmOpacityInput.value + '%';
   _drawWatermarkPreview();
 });
-(document.getElementById('watermark-text')     as HTMLInputElement).addEventListener('input',  _drawWatermarkPreview);
+(document.getElementById('watermark-text')     as HTMLTextAreaElement).addEventListener('input',  _drawWatermarkPreview);
 (document.getElementById('watermark-fontsize') as HTMLInputElement).addEventListener('input',  _drawWatermarkPreview);
 (document.getElementById('watermark-angle')    as HTMLInputElement).addEventListener('input',  _drawWatermarkPreview);
 (document.getElementById('watermark-angle')    as HTMLInputElement).addEventListener('change', _drawWatermarkPreview);
@@ -2072,7 +2078,8 @@ async function _executeWatermark() {
   if (!activeTab) return;
   document.getElementById('watermark-modal')!.classList.add('hidden');
 
-  const text     = (document.getElementById('watermark-text')     as HTMLInputElement).value.trim();
+  const text     = (document.getElementById('watermark-text')     as HTMLTextAreaElement).value
+                    .split('\n').map(l => l.trim()).filter(l => l.length > 0).join('\n');
   const fontSize = parseFloat((document.getElementById('watermark-fontsize') as HTMLInputElement).value) || 72;
   const opacity  = parseFloat((document.getElementById('watermark-opacity')  as HTMLInputElement).value) / 100;
   const angle    = parseFloat((document.getElementById('watermark-angle')    as HTMLInputElement).value) || 0;

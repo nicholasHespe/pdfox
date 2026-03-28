@@ -326,32 +326,41 @@ export interface WatermarkConfig {
  * Draw a centred, rotated text watermark on every page and return the modified bytes.
  */
 export async function embedWatermark(pdfBytes: Uint8Array, config: WatermarkConfig): Promise<Uint8Array> {
-  const pdfDoc   = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
-  const font     = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const grey     = rgb(0.5, 0.5, 0.5);
-  const angleRad = (config.angle * Math.PI) / 180;
+  const pdfDoc     = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const font       = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const grey       = rgb(0.5, 0.5, 0.5);
+  const angleRad   = (config.angle * Math.PI) / 180;
+  const lines      = config.text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const lineHeight = config.fontSize * 1.3;
 
   for (let i = 0; i < pdfDoc.getPageCount(); i++) {
-    const page              = pdfDoc.getPage(i);
+    const page = pdfDoc.getPage(i);
     const { width: pdfW, height: pdfH } = page.getSize();
-    const textWidth         = font.widthOfTextAtSize(config.text, config.fontSize);
 
-    // Translate origin so the centre of the text string lands at the page centre
-    const x = pdfW / 2
-      - (textWidth / 2)       * Math.cos(angleRad)
-      + (config.fontSize / 2) * Math.sin(angleRad);
-    const y = pdfH / 2
-      - (textWidth / 2)       * Math.sin(angleRad)
-      - (config.fontSize / 2) * Math.cos(angleRad);
+    lines.forEach((line, li) => {
+      const textWidth  = font.widthOfTextAtSize(line, config.fontSize);
+      // Perpendicular offset (CCW 90° from text direction) to space lines
+      const perpOffset = (li - (lines.length - 1) / 2) * lineHeight;
 
-    page.drawText(config.text, {
-      x,
-      y,
-      size:    config.fontSize,
-      font,
-      color:   grey,
-      opacity: config.opacity,
-      rotate:  degrees(config.angle),
+      // Centre each line at page centre then offset perpendicularly
+      const x = pdfW / 2
+        - (textWidth / 2)        * Math.cos(angleRad)
+        + (config.fontSize / 2)  * Math.sin(angleRad)
+        - perpOffset             * Math.sin(angleRad);
+      const y = pdfH / 2
+        - (textWidth / 2)        * Math.sin(angleRad)
+        - (config.fontSize / 2)  * Math.cos(angleRad)
+        + perpOffset             * Math.cos(angleRad);
+
+      page.drawText(line, {
+        x,
+        y,
+        size:    config.fontSize,
+        font,
+        color:   grey,
+        opacity: config.opacity,
+        rotate:  degrees(config.angle),
+      });
     });
   }
 
