@@ -887,7 +887,7 @@ html, body {
   font-size: 12px;
 }
 .footer-col select { cursor: pointer; }
-.footer-custom-hidden { display: none; }
+.footer-custom-hidden { visibility: hidden; }
 .footer-size-row {
   display: flex;
   align-items: center;

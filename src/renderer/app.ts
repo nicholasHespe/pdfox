@@ -1946,7 +1946,7 @@ function _drawFooterPreview() {
 
   // Footer text
   const pdfFontSize  = parseFloat((document.getElementById('footer-fontsize') as HTMLInputElement).value) || 10;
-  const canvasFontSize = Math.max(9, Math.min(16, pdfFontSize * pw / 280));
+  const canvasFontSize = pdfFontSize * pw / 612; // proportional to letter page width (612pt)
   ctx.font      = `${canvasFontSize}px Helvetica, Arial, sans-serif`;
   ctx.fillStyle = '#222222';
   const textY = sepY + 17;
