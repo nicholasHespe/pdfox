@@ -33,6 +33,7 @@ const _closedTabStack: { filePath: string }[] = [];
 let _zoomTimer: ReturnType<typeof setTimeout> | null = null; // setTimeout handle for deferred re-render
 let _zoomTarget: number | null = null; // accumulated target scale while debounce is pending
 let _zoomCursor: { x: number; y: number } | null = null; // cursor pane-relative coords at zoom start
+let _zoomTabId:  number | null = null;  // ID of the tab that started the current zoom gesture
 
 // Custom scrollbar drag state
 let _sbDragging        = false;
@@ -1224,6 +1225,7 @@ function zoom(delta: number, cursorX?: number, cursorY?: number) {
         x: Math.max(0, Math.min(pane.clientWidth,  cursorX - paneRect.left)),
         y: Math.max(0, Math.min(pane.clientHeight, cursorY - paneRect.top)),
       };
+      _zoomTabId = activeTab.id;
     }
 
     if (_zoomCursor !== null) {
@@ -1259,8 +1261,10 @@ async function _applyZoomNow(scale: number) {
   const v        = activeTab.viewer;
   const pane     = activeTab.pane;
   const oldScale = v.scale;
-  const cursor   = _zoomCursor;
+  // Discard stale cursor if the user switched tabs during the debounce.
+  const cursor   = (activeTab.id === _zoomTabId) ? _zoomCursor : null;
   _zoomCursor    = null;
+  _zoomTabId     = null;
 
   // Capture scroll snapshot before the CSS transform is removed so the
   // pre-scroll and final-scroll calculations both use the committed position.
