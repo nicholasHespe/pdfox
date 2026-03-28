@@ -9,7 +9,7 @@ import type { Annotation, DrawAnnotation, HighlightAnnotation, TextAnnotation, S
 import type { PDFViewer } from './viewer.js';
 
 // Cast the direct-path runtime import to the pdf-lib type surface
-const { PDFDocument, PDFName, PDFArray, PDFNumber, PDFString, degrees } =
+const { PDFDocument, PDFName, PDFArray, PDFNumber, PDFString, degrees, rgb, StandardFonts } =
   _pdfLib as unknown as typeof PDFLibNS;
 
 type PDFDoc  = import('pdf-lib').PDFDocument;
@@ -255,13 +255,105 @@ function _addCircleAnnotation(pdfPage: PDFPage, ann: ShapeAnnotation, pdfW: numb
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function _appendAnnotation(pdfPage: PDFPage, annotDict: any): void {
-   
+
   const ref    = pdfPage.doc.context.register(annotDict);
   const annots = pdfPage.node.get(PDFName.of('Annots'));
   if (annots instanceof PDFArray) {
     annots.push(ref);
   } else {
-     
+
     pdfPage.node.set(PDFName.of('Annots'), pdfPage.doc.context.obj([ref]));
   }
+}
+
+// ── Footer ───────────────────────────────────────────────────
+
+export interface FooterConfig {
+  left:     string;
+  center:   string;
+  right:    string;
+  fontSize: number;
+}
+
+/**
+ * Draw a 3-column footer on every page and return the modified bytes.
+ * Tokens {page} and {total} are replaced with the current page number and total.
+ */
+export async function embedFooter(pdfBytes: Uint8Array, config: FooterConfig): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const font   = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const total  = pdfDoc.getPageCount();
+  const black  = rgb(0, 0, 0);
+  const margin = 40;
+  const yPos   = 20;
+
+  for (let i = 0; i < total; i++) {
+    const page        = pdfDoc.getPage(i);
+    const { width: pdfW } = page.getSize();
+    const resolve     = (t: string) =>
+      t.replace(/\{page\}/g, String(i + 1)).replace(/\{total\}/g, String(total));
+
+    const l = resolve(config.left);
+    const c = resolve(config.center);
+    const r = resolve(config.right);
+
+    if (l) {
+      page.drawText(l, { x: margin, y: yPos, size: config.fontSize, font, color: black });
+    }
+    if (c) {
+      const tw = font.widthOfTextAtSize(c, config.fontSize);
+      page.drawText(c, { x: (pdfW - tw) / 2, y: yPos, size: config.fontSize, font, color: black });
+    }
+    if (r) {
+      const tw = font.widthOfTextAtSize(r, config.fontSize);
+      page.drawText(r, { x: pdfW - margin - tw, y: yPos, size: config.fontSize, font, color: black });
+    }
+  }
+
+  return pdfDoc.save();
+}
+
+// ── Watermark ────────────────────────────────────────────────
+
+export interface WatermarkConfig {
+  text:     string;
+  fontSize: number;
+  opacity:  number;  // 0.0–1.0
+  angle:    number;  // degrees
+}
+
+/**
+ * Draw a centred, rotated text watermark on every page and return the modified bytes.
+ */
+export async function embedWatermark(pdfBytes: Uint8Array, config: WatermarkConfig): Promise<Uint8Array> {
+  const pdfDoc   = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const font     = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const grey     = rgb(0.5, 0.5, 0.5);
+  const angleRad = (config.angle * Math.PI) / 180;
+
+  for (let i = 0; i < pdfDoc.getPageCount(); i++) {
+    const page              = pdfDoc.getPage(i);
+    const { width: pdfW, height: pdfH } = page.getSize();
+    const textWidth         = font.widthOfTextAtSize(config.text, config.fontSize);
+
+    // Translate origin so the centre of the text string lands at the page centre
+    const x = pdfW / 2
+      - (textWidth / 2)       * Math.cos(angleRad)
+      + (config.fontSize / 2) * Math.sin(angleRad);
+    const y = pdfH / 2
+      - (textWidth / 2)       * Math.sin(angleRad)
+      - (config.fontSize / 2) * Math.cos(angleRad);
+
+    page.drawText(config.text, {
+      x,
+      y,
+      size:    config.fontSize,
+      font,
+      color:   grey,
+      opacity: config.opacity,
+      rotate:  degrees(config.angle),
+    });
+  }
+
+  return pdfDoc.save();
 }

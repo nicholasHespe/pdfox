@@ -3,7 +3,7 @@
 
 import { PDFViewer }        from './viewer.js';
 import { Annotator }        from './annotator.js';
-import { embedAnnotations } from './saver.js';
+import { embedAnnotations, embedFooter, embedWatermark } from './saver.js';
 // @ts-expect-error — pdf-lib is imported via direct path for Electron's file:// ESM loader
 import * as _pdfLib       from '../../node_modules/pdf-lib/dist/pdf-lib.esm.js';
 import type * as PDFLibNS from 'pdf-lib';
@@ -1798,7 +1798,11 @@ async function _openReorderModal() {
     btnR.className = 'reorder-arrow';
     btnR.title     = 'Move right';
     btnR.innerHTML = '&#8594;';
-    controls.append(btnL, btnR);
+    const btnDel = document.createElement('button');
+    btnDel.className = 'reorder-arrow reorder-remove';
+    btnDel.title     = 'Remove page';
+    btnDel.innerHTML = '&#x2715;';
+    controls.append(btnL, btnR, btnDel);
 
     thumb.append(img, num, controls);
 
@@ -1810,6 +1814,13 @@ async function _openReorderModal() {
 
     btnL.addEventListener('click', (e) => { e.stopPropagation(); selectThumb(thumb); moveThumb(thumb, -1); });
     btnR.addEventListener('click', (e) => { e.stopPropagation(); selectThumb(thumb); moveThumb(thumb,  1); });
+    btnDel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      thumb.remove();
+      container.querySelectorAll('.reorder-page-num').forEach((s, i) => {
+        s.textContent = `Page ${i + 1}`;
+      });
+    });
 
     thumb.addEventListener('dragstart', (e) => {
       e.dataTransfer!.setData('reorder-orig', String(thumb.dataset.orig));
@@ -1851,11 +1862,14 @@ async function _executeReorder() {
   if (!activeTab) return;
   document.getElementById('reorder-modal')!.classList.add('hidden');
 
+  const tab       = activeTab;
   const container = document.getElementById('reorder-pages')!;
   const newOrder  = [...container.querySelectorAll('.reorder-thumb')].map(el => Number((el as HTMLElement).dataset.orig));
-  if (newOrder.every((v, i) => v === i)) return; // unchanged
-
-  const tab = activeTab;
+  if (newOrder.length === 0) {
+    await showDialog({ title: 'Remove Pages', message: 'Cannot remove all pages.', buttons: ['OK'], defaultId: 0, cancelId: 0 });
+    return;
+  }
+  if (newOrder.length === tab.viewer.pageCount && newOrder.every((v, i) => v === i)) return; // unchanged
   const srcDoc    = await PDFDocument.load(tab.pdfBytes, { ignoreEncryption: true });
   const resultDoc = await PDFDocument.create();
   const pages     = await resultDoc.copyPages(srcDoc, newOrder);
@@ -1865,6 +1879,84 @@ async function _executeReorder() {
   tab.pdfBytes = bytes;
   tab.annotator!.clear();
   // Re-add loading overlay for the re-render
+  const reloadEl = document.createElement('div');
+  reloadEl.className = 'loading-overlay';
+  reloadEl.innerHTML = '<div class="spinner"></div>';
+  tab.pane.appendChild(reloadEl);
+  tab.loadingEl = reloadEl;
+  finder.invalidateTab(tab);
+  await _loadTabContent(tab);
+  markDirty(tab);
+}
+
+// ── Add Footer ─────────────────────────────────────────────────
+
+document.getElementById('btn-footer')!.addEventListener('click', () => {
+  if (!activeTab) return;
+  document.getElementById('footer-modal')!.classList.remove('hidden');
+});
+document.getElementById('footer-cancel')!.addEventListener('click', () => {
+  document.getElementById('footer-modal')!.classList.add('hidden');
+});
+document.getElementById('footer-ok')!.addEventListener('click', _executeFooter);
+
+async function _executeFooter() {
+  if (!activeTab) return;
+  document.getElementById('footer-modal')!.classList.add('hidden');
+
+  const left     = (document.getElementById('footer-left')     as HTMLInputElement).value;
+  const center   = (document.getElementById('footer-center')   as HTMLInputElement).value;
+  const right    = (document.getElementById('footer-right')    as HTMLInputElement).value;
+  const fontSize = parseFloat((document.getElementById('footer-fontsize') as HTMLInputElement).value) || 10;
+
+  if (!left && !center && !right) return;
+
+  const tab   = activeTab;
+  const bytes = await embedFooter(tab.pdfBytes, { left, center, right, fontSize });
+
+  tab.pdfBytes = bytes;
+  tab.annotator!.clear();
+  const reloadEl = document.createElement('div');
+  reloadEl.className = 'loading-overlay';
+  reloadEl.innerHTML = '<div class="spinner"></div>';
+  tab.pane.appendChild(reloadEl);
+  tab.loadingEl = reloadEl;
+  finder.invalidateTab(tab);
+  await _loadTabContent(tab);
+  markDirty(tab);
+}
+
+// ── Add Watermark ───────────────────────────────────────────────
+
+document.getElementById('btn-watermark')!.addEventListener('click', () => {
+  if (!activeTab) return;
+  document.getElementById('watermark-modal')!.classList.remove('hidden');
+});
+document.getElementById('watermark-cancel')!.addEventListener('click', () => {
+  document.getElementById('watermark-modal')!.classList.add('hidden');
+});
+document.getElementById('watermark-ok')!.addEventListener('click', _executeWatermark);
+
+const _wmOpacityInput = document.getElementById('watermark-opacity') as HTMLInputElement;
+const _wmOpacityVal   = document.getElementById('watermark-opacity-val')!;
+_wmOpacityInput.addEventListener('input', () => { _wmOpacityVal.textContent = _wmOpacityInput.value + '%'; });
+
+async function _executeWatermark() {
+  if (!activeTab) return;
+  document.getElementById('watermark-modal')!.classList.add('hidden');
+
+  const text     = (document.getElementById('watermark-text')     as HTMLInputElement).value.trim();
+  const fontSize = parseFloat((document.getElementById('watermark-fontsize') as HTMLInputElement).value) || 72;
+  const opacity  = parseFloat((document.getElementById('watermark-opacity')  as HTMLInputElement).value) / 100;
+  const angle    = parseFloat((document.getElementById('watermark-angle')    as HTMLInputElement).value) || 0;
+
+  if (!text) return;
+
+  const tab   = activeTab;
+  const bytes = await embedWatermark(tab.pdfBytes, { text, fontSize, opacity, angle });
+
+  tab.pdfBytes = bytes;
+  tab.annotator!.clear();
   const reloadEl = document.createElement('div');
   reloadEl.className = 'loading-overlay';
   reloadEl.innerHTML = '<div class="spinner"></div>';
