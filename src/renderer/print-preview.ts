@@ -101,8 +101,10 @@ btnPrinterPref.addEventListener('click', () => {
 });
 
 // ── Page range parsing ────────────────────────────────────────
-// Returns null for "all pages", or a Set<number> of selected page numbers.
-function parsePageRange(str: string): Set<number> | null {
+// Returns null for "all pages" (empty input), a non-empty Set<number> for a
+// valid range, or false when the input is non-empty but resolves to no pages
+// (reversed range, out-of-range values, etc.).
+function parsePageRange(str: string): Set<number> | null | false {
   const trimmed = str.trim();
   if (!trimmed) return null;
   const result = new Set<number>();
@@ -117,7 +119,7 @@ function parsePageRange(str: string): Set<number> | null {
       if (!isNaN(n) && n >= 1 && n <= totalPages) result.add(n);
     }
   }
-  return result;
+  return result.size > 0 ? result : false;
 }
 
 // ── Booklet ordering ──────────────────────────────────────────
@@ -210,6 +212,13 @@ function renderPreview() {
   const isBooklet = chkBooklet.checked;
   const pps       = isBooklet ? 2 : (parseInt(selPps.value) || 1);
   const pageRange = parsePageRange(inpPages.value);
+
+  if (pageRange === false) {
+    inpPages.setCustomValidity('No pages match this range.');
+    inpPages.reportValidity();
+    return;
+  }
+  inpPages.setCustomValidity('');
 
   // Reference dimensions (first page at 1× scale)
   const refW = pageData[0].naturalW;
@@ -305,6 +314,12 @@ btnPrint.addEventListener('click', async () => {
   const scaleFactor = (scaleVal === 'fit' || scaleVal === '100') ? 100 : parseInt(scaleVal);
   const duplexMode  = selDuplex.value as 'simplex' | 'longEdge' | 'shortEdge';
   const landscape   = chkBooklet.checked || printOrientation === 'landscape';
+
+  if (parsePageRange(inpPages.value) === false) {
+    inpPages.setCustomValidity('No pages match this range.');
+    inpPages.reportValidity();
+    return;
+  }
 
   if (failedPages.length > 0) {
     const n = failedPages.length;
