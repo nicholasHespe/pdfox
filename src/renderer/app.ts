@@ -1468,6 +1468,7 @@ window.api.onMenuEvent((event) => {
     case 'menu-open':         openFile(); break;
     case 'menu-save':         saveTab(activeTab); break;
     case 'menu-save-copy':    saveTabCopy(activeTab); break;
+    case 'menu-print':        printTab(activeTab); break;
     case 'menu-close-tab':    if (activeTab) requestCloseTab(activeTab); break;
     case 'menu-reopen-tab':   reopenLastTab(); break;
     case 'menu-extension-id': _openExtensionIdModal(); break;

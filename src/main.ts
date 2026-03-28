@@ -78,6 +78,8 @@ function buildMenu(): void {
         { label: 'Save',        accelerator: 'CmdOrCtrl+S',       click: () => fw()?.webContents.send('menu-save') },
         { label: 'Save Copy…',  accelerator: 'CmdOrCtrl+Shift+S', click: () => fw()?.webContents.send('menu-save-copy') },
         { type: 'separator' },
+        { label: 'Print…',          accelerator: 'CmdOrCtrl+P',           click: () => fw()?.webContents.send('menu-print') },
+        { type: 'separator' },
         { label: 'Close Tab',       accelerator: 'CmdOrCtrl+W',           click: () => fw()?.webContents.send('menu-close-tab') },
         { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T',  click: () => fw()?.webContents.send('menu-reopen-tab') },
         { type: 'separator' },

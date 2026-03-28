@@ -41,7 +41,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Subscribe to menu events
   onMenuEvent: (callback: (event: string) => void) => {
-    ['menu-open', 'menu-save', 'menu-save-copy', 'menu-close-tab', 'menu-reopen-tab', 'menu-extension-id']
+    ['menu-open', 'menu-save', 'menu-save-copy', 'menu-print', 'menu-close-tab', 'menu-reopen-tab', 'menu-extension-id']
       .forEach(ev => ipcRenderer.on(ev, () => callback(ev)));
   },
 

@@ -74,7 +74,7 @@ function parsePageRange(str: string): Set<number> | null {
       if (!isNaN(n) && n >= 1 && n <= totalPages) result.add(n);
     }
   }
-  return result.size > 0 ? result : null;
+  return result;
 }
 
 // ── Booklet ordering ──────────────────────────────────────────
@@ -239,7 +239,9 @@ btnPrint.addEventListener('click', async () => {
   const scaleVal    = selScale.value;
   const scaleFactor = (scaleVal === 'fit' || scaleVal === '100') ? 100 : parseInt(scaleVal);
   const duplexMode  = selDuplex.value as 'simplex' | 'longEdge' | 'shortEdge';
-  const landscape   = chkBooklet.checked; // booklet composites are landscape
+  // Booklet composites are always landscape; otherwise follow the first page's orientation
+  const landscape   = chkBooklet.checked ||
+    (pageData.length > 0 && pageData[0].naturalW > pageData[0].naturalH);
 
   btnPrint.disabled = true;
   statusEl.textContent = 'Printing…';
