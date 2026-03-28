@@ -1891,9 +1891,95 @@ async function _executeReorder() {
 
 // ── Add Footer ─────────────────────────────────────────────────
 
+function _resolveFooterColForPreview(col: 'left' | 'center' | 'right'): string {
+  const sel    = document.getElementById(`footer-${col}-sel`)    as HTMLSelectElement;
+  const custom = document.getElementById(`footer-${col}-custom`) as HTMLInputElement;
+  const total  = activeTab?.viewer.pageCount ?? 10;
+  switch (sel.value) {
+    case 'date':       return new Date().toLocaleDateString();
+    case 'page':       return '1';
+    case 'page-total': return `1 / ${total}`;
+    case 'custom':     return custom.value;
+    default:           return '';
+  }
+}
+
+function _resolveFooterColForEmbed(col: 'left' | 'center' | 'right'): string {
+  const sel    = document.getElementById(`footer-${col}-sel`)    as HTMLSelectElement;
+  const custom = document.getElementById(`footer-${col}-custom`) as HTMLInputElement;
+  switch (sel.value) {
+    case 'date':       return new Date().toLocaleDateString();
+    case 'page':       return '{page}';
+    case 'page-total': return '{page} / {total}';
+    case 'custom':     return custom.value;
+    default:           return '';
+  }
+}
+
+function _drawFooterPreview() {
+  const canvas = document.getElementById('footer-preview') as HTMLCanvasElement;
+  const ctx    = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#1e1e1e';
+  ctx.fillRect(0, 0, W, H);
+
+  // Page outline
+  const mx = 16, my = 10, pw = W - mx * 2, ph = H - my * 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(mx, my, pw, ph);
+
+  // Simulated content lines
+  ctx.strokeStyle = '#e0e0e0';
+  ctx.lineWidth = 1;
+  for (let y = my + 10; y < my + ph - 34; y += 10) {
+    const lw = y < my + ph - 54 ? pw - 24 : (pw - 24) * 0.55;
+    ctx.beginPath(); ctx.moveTo(mx + 12, y); ctx.lineTo(mx + 12 + lw, y); ctx.stroke();
+  }
+
+  // Footer separator
+  const sepY = my + ph - 28;
+  ctx.strokeStyle = '#c0c0c0';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(mx + 8, sepY); ctx.lineTo(mx + pw - 8, sepY); ctx.stroke();
+
+  // Footer text
+  const pdfFontSize  = parseFloat((document.getElementById('footer-fontsize') as HTMLInputElement).value) || 10;
+  const canvasFontSize = Math.max(9, Math.min(16, pdfFontSize * pw / 280));
+  ctx.font      = `${canvasFontSize}px Helvetica, Arial, sans-serif`;
+  ctx.fillStyle = '#222222';
+  const textY = sepY + 17;
+
+  const lText = _resolveFooterColForPreview('left');
+  const cText = _resolveFooterColForPreview('center');
+  const rText = _resolveFooterColForPreview('right');
+
+  if (lText) { ctx.textAlign = 'left';   ctx.fillText(lText, mx + 10,      textY); }
+  if (cText) { ctx.textAlign = 'center'; ctx.fillText(cText, mx + pw / 2,  textY); }
+  if (rText) { ctx.textAlign = 'right';  ctx.fillText(rText, mx + pw - 10, textY); }
+  ctx.textAlign = 'left';
+}
+
+function _setupFooterColSelect(col: 'left' | 'center' | 'right') {
+  const sel    = document.getElementById(`footer-${col}-sel`)    as HTMLSelectElement;
+  const custom = document.getElementById(`footer-${col}-custom`) as HTMLInputElement;
+  sel.addEventListener('change', () => {
+    custom.classList.toggle('footer-custom-hidden', sel.value !== 'custom');
+    _drawFooterPreview();
+  });
+  custom.addEventListener('input', _drawFooterPreview);
+}
+
+_setupFooterColSelect('left');
+_setupFooterColSelect('center');
+_setupFooterColSelect('right');
+(document.getElementById('footer-fontsize') as HTMLInputElement).addEventListener('input', _drawFooterPreview);
+
 document.getElementById('btn-footer')!.addEventListener('click', () => {
   if (!activeTab) return;
   document.getElementById('footer-modal')!.classList.remove('hidden');
+  _drawFooterPreview();
 });
 document.getElementById('footer-cancel')!.addEventListener('click', () => {
   document.getElementById('footer-modal')!.classList.add('hidden');
@@ -1904,9 +1990,9 @@ async function _executeFooter() {
   if (!activeTab) return;
   document.getElementById('footer-modal')!.classList.add('hidden');
 
-  const left     = (document.getElementById('footer-left')     as HTMLInputElement).value;
-  const center   = (document.getElementById('footer-center')   as HTMLInputElement).value;
-  const right    = (document.getElementById('footer-right')    as HTMLInputElement).value;
+  const left     = _resolveFooterColForEmbed('left');
+  const center   = _resolveFooterColForEmbed('center');
+  const right    = _resolveFooterColForEmbed('right');
   const fontSize = parseFloat((document.getElementById('footer-fontsize') as HTMLInputElement).value) || 10;
 
   if (!left && !center && !right) return;
@@ -1928,9 +2014,43 @@ async function _executeFooter() {
 
 // ── Add Watermark ───────────────────────────────────────────────
 
+function _drawWatermarkPreview() {
+  const canvas = document.getElementById('watermark-preview') as HTMLCanvasElement;
+  const ctx    = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#1e1e1e';
+  ctx.fillRect(0, 0, W, H);
+
+  // Page outline
+  const mx = 8, my = 8, pw = W - mx * 2, ph = H - my * 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(mx, my, pw, ph);
+
+  const text     = (document.getElementById('watermark-text')     as HTMLInputElement).value.trim() || 'Preview';
+  const pdfSize  = parseFloat((document.getElementById('watermark-fontsize') as HTMLInputElement).value) || 72;
+  const opacity  = parseFloat((document.getElementById('watermark-opacity')  as HTMLInputElement).value) / 100;
+  const angle    = parseFloat((document.getElementById('watermark-angle')    as HTMLInputElement).value) || 0;
+
+  const canvasFs = Math.max(6, Math.round(pdfSize * pw / 612));
+
+  ctx.save();
+  ctx.globalAlpha  = opacity;
+  ctx.fillStyle    = '#808080';
+  ctx.font         = `bold ${canvasFs}px Helvetica, Arial, sans-serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.translate(mx + pw / 2, my + ph / 2);
+  ctx.rotate(-angle * Math.PI / 180); // negative to match pdf-lib CCW convention
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+
 document.getElementById('btn-watermark')!.addEventListener('click', () => {
   if (!activeTab) return;
   document.getElementById('watermark-modal')!.classList.remove('hidden');
+  _drawWatermarkPreview();
 });
 document.getElementById('watermark-cancel')!.addEventListener('click', () => {
   document.getElementById('watermark-modal')!.classList.add('hidden');
@@ -1939,7 +2059,14 @@ document.getElementById('watermark-ok')!.addEventListener('click', _executeWater
 
 const _wmOpacityInput = document.getElementById('watermark-opacity') as HTMLInputElement;
 const _wmOpacityVal   = document.getElementById('watermark-opacity-val')!;
-_wmOpacityInput.addEventListener('input', () => { _wmOpacityVal.textContent = _wmOpacityInput.value + '%'; });
+_wmOpacityInput.addEventListener('input', () => {
+  _wmOpacityVal.textContent = _wmOpacityInput.value + '%';
+  _drawWatermarkPreview();
+});
+(document.getElementById('watermark-text')     as HTMLInputElement).addEventListener('input',  _drawWatermarkPreview);
+(document.getElementById('watermark-fontsize') as HTMLInputElement).addEventListener('input',  _drawWatermarkPreview);
+(document.getElementById('watermark-angle')    as HTMLInputElement).addEventListener('input',  _drawWatermarkPreview);
+(document.getElementById('watermark-angle')    as HTMLInputElement).addEventListener('change', _drawWatermarkPreview);
 
 async function _executeWatermark() {
   if (!activeTab) return;

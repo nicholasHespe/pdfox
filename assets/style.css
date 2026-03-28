@@ -877,7 +877,8 @@ html, body {
 }
 .footer-col { display: flex; flex-direction: column; gap: 4px; }
 .footer-col label { font-size: 11px; color: #999; }
-.footer-col input {
+.footer-col select,
+.footer-col input[type="text"] {
   padding: 5px 7px;
   background: #2a2a2a;
   border: 1px solid var(--border);
@@ -885,12 +886,15 @@ html, body {
   color: var(--text);
   font-size: 12px;
 }
+.footer-col select { cursor: pointer; }
+.footer-custom-hidden { display: none; }
 .footer-size-row {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   color: #999;
+  margin-bottom: 10px;
 }
 .footer-size-row input {
   padding: 4px 6px;
@@ -900,8 +904,20 @@ html, body {
   color: var(--text);
   font-size: 12px;
 }
+#footer-preview {
+  display: block;
+  width: 100%;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
 
 /* ── Watermark modal ─────────────────────────────────────────── */
+#watermark-modal-body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.wm-fields { flex: 1; min-width: 0; }
 .wm-row {
   display: flex;
   align-items: center;
@@ -921,6 +937,11 @@ html, body {
 }
 .wm-row span { color: #999; }
 #watermark-opacity-val { min-width: 32px; text-align: right; color: var(--text); }
+#watermark-preview {
+  flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
 
 /* ── Loading spinner ─────────────────────────────────────────── */
 .loading-overlay {

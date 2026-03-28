@@ -361,20 +361,41 @@
   <div id="footer-modal" class="modal-overlay hidden">
     <div class="modal-box" style="min-width:480px;">
       <div class="modal-title">Add Footer</div>
-      <p class="modal-hint">Appears on every page. Use {page} and {total} for page numbers.</p>
+      <p class="modal-hint">Embedded permanently on every page.</p>
       <div class="modal-body">
         <div id="footer-cols">
           <div class="footer-col">
-            <label for="footer-left">Left</label>
-            <input id="footer-left" type="text" placeholder="e.g. {page} / {total}" />
+            <label for="footer-left-sel">Left</label>
+            <select id="footer-left-sel">
+              <option value="">None</option>
+              <option value="date">Date</option>
+              <option value="page">Page number</option>
+              <option value="page-total">Page / Total</option>
+              <option value="custom">Custom&hellip;</option>
+            </select>
+            <input id="footer-left-custom" class="footer-custom footer-custom-hidden" type="text" placeholder="Custom text" />
           </div>
           <div class="footer-col">
-            <label for="footer-center">Center</label>
-            <input id="footer-center" type="text" placeholder="Centered text" />
+            <label for="footer-center-sel">Center</label>
+            <select id="footer-center-sel">
+              <option value="">None</option>
+              <option value="date">Date</option>
+              <option value="page" selected>Page number</option>
+              <option value="page-total">Page / Total</option>
+              <option value="custom">Custom&hellip;</option>
+            </select>
+            <input id="footer-center-custom" class="footer-custom footer-custom-hidden" type="text" placeholder="Custom text" />
           </div>
           <div class="footer-col">
-            <label for="footer-right">Right</label>
-            <input id="footer-right" type="text" placeholder="Right-aligned text" />
+            <label for="footer-right-sel">Right</label>
+            <select id="footer-right-sel">
+              <option value="">None</option>
+              <option value="date">Date</option>
+              <option value="page">Page number</option>
+              <option value="page-total">Page / Total</option>
+              <option value="custom">Custom&hellip;</option>
+            </select>
+            <input id="footer-right-custom" class="footer-custom footer-custom-hidden" type="text" placeholder="Custom text" />
           </div>
         </div>
         <div class="footer-size-row">
@@ -382,6 +403,7 @@
           <input id="footer-fontsize" type="number" value="10" min="4" max="72" style="width:60px;" />
           <span>pt</span>
         </div>
+        <canvas id="footer-preview" width="440" height="140"></canvas>
       </div>
       <div class="modal-footer">
         <button class="modal-btn" id="footer-cancel">Cancel</button>
@@ -392,29 +414,32 @@
 
   <!-- ── Watermark modal ───────────────────────────────────────── -->
   <div id="watermark-modal" class="modal-overlay hidden">
-    <div class="modal-box" style="min-width:360px;">
+    <div class="modal-box" style="min-width:400px;">
       <div class="modal-title">Add Watermark</div>
       <p class="modal-hint">Embedded permanently into the PDF.</p>
-      <div class="modal-body">
-        <div class="wm-row">
-          <label for="watermark-text">Text</label>
-          <input id="watermark-text" type="text" placeholder="e.g. DRAFT" style="flex:1;" />
+      <div class="modal-body" id="watermark-modal-body">
+        <div class="wm-fields">
+          <div class="wm-row">
+            <label for="watermark-text">Text</label>
+            <input id="watermark-text" type="text" placeholder="e.g. DRAFT" style="flex:1;" />
+          </div>
+          <div class="wm-row">
+            <label for="watermark-fontsize">Font size</label>
+            <input id="watermark-fontsize" type="number" value="72" min="8" max="400" style="width:70px;" />
+            <span>pt</span>
+          </div>
+          <div class="wm-row">
+            <label for="watermark-opacity">Opacity</label>
+            <input id="watermark-opacity" type="range" min="5" max="100" value="30" style="flex:1;" />
+            <span id="watermark-opacity-val">30%</span>
+          </div>
+          <div class="wm-row">
+            <label for="watermark-angle">Angle</label>
+            <input id="watermark-angle" type="number" value="45" min="0" max="360" style="width:70px;" />
+            <span>&#176;</span>
+          </div>
         </div>
-        <div class="wm-row">
-          <label for="watermark-fontsize">Font size</label>
-          <input id="watermark-fontsize" type="number" value="72" min="8" max="400" style="width:70px;" />
-          <span>pt</span>
-        </div>
-        <div class="wm-row">
-          <label for="watermark-opacity">Opacity</label>
-          <input id="watermark-opacity" type="range" min="5" max="100" value="30" style="flex:1;" />
-          <span id="watermark-opacity-val">30%</span>
-        </div>
-        <div class="wm-row">
-          <label for="watermark-angle">Angle</label>
-          <input id="watermark-angle" type="number" value="45" min="0" max="360" style="width:70px;" />
-          <span>&#176;</span>
-        </div>
+        <canvas id="watermark-preview" width="120" height="155"></canvas>
       </div>
       <div class="modal-footer">
         <button class="modal-btn" id="watermark-cancel">Cancel</button>
