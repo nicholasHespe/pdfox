@@ -61,6 +61,9 @@ contextBridge.exposeInMainWorld('api', {
   // Show the file in its containing folder
   revealInExplorer: (filePath: string) => ipcRenderer.invoke('reveal-in-explorer', filePath),
 
+  // Print the PDF file directly via the system print dialog
+  printPdf: (filePath: string) => ipcRenderer.invoke('print-pdf', filePath),
+
   // Initiate a native OS file drag (for dragging into Outlook, Explorer, etc.)
   startDrag: (filePath: string) => ipcRenderer.send('start-drag', filePath),
 

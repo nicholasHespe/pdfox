@@ -17,6 +17,7 @@ interface Window {
     onCloseTabByFilepath: (callback: (filePath: string) => void) => void;
     copyFileToClipboard: (filePath: string) => Promise<{ ok: boolean }>;
     revealInExplorer:    (filePath: string) => Promise<{ ok: boolean }>;
+    printPdf:            (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     startDrag: (filePath: string) => void;
     setUiZoom: (factor: number) => void;
     getUiZoom: () => number;

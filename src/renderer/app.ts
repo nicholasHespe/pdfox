@@ -329,7 +329,7 @@ tabContextMenu.addEventListener('mousedown', (e) => {
     case 'close':        requestCloseTab(tab); break;
     case 'save':         saveTab(tab); break;
     case 'save-as':      saveTabCopy(tab); break;
-    case 'print':        switchTab(tab); window.print(); break;
+    case 'print':        switchTab(tab); printTab(tab); break;
     case 'copy-file':    window.api.copyFileToClipboard(tab.filePath!); break;
     case 'reveal':       window.api.revealInExplorer(tab.filePath!); break;
     case 'close-others':
@@ -993,6 +993,15 @@ async function saveTabCopy(tab: Tab | null) {
   return false;
 }
 
+async function printTab(tab: Tab | null) {
+  if (!tab) return;
+  if (!tab.filePath) {
+    await window.api.showMessageBox({ type: 'info', message: 'Save the document before printing.', buttons: ['OK'] });
+    return;
+  }
+  await window.api.printPdf(tab.filePath);
+}
+
 async function reopenLastTab() {
   if (_closedTabStack.length === 0) return;
   const { filePath } = _closedTabStack.pop()!;
@@ -1312,52 +1321,7 @@ document.getElementById('btn-redo')!.addEventListener('click',   () => activeTab
 document.getElementById('btn-fit')!.addEventListener('click',    fitWidth);
 document.getElementById('btn-fit-h')!.addEventListener('click',  fitHeight);
 document.getElementById('btn-rotate')!.addEventListener('click', (e) => rotate(e.shiftKey));
-document.getElementById('btn-print')!.addEventListener('click',  () => window.print());
-
-// ── TEMPORARY PRINT DEBUG ──────────────────────────────────────
-{
-  const dbgEl = document.createElement('div');
-  dbgEl.id = 'print-debug-overlay';
-  dbgEl.style.cssText = 'display:none;position:fixed;top:0;left:0;background:yellow;color:black;font:12px monospace;padding:8px;z-index:9999;white-space:pre;';
-  document.body.appendChild(dbgEl);
-
-  window.addEventListener('beforeprint', () => {
-    const lines: string[] = [];
-    lines.push(`window inner: ${window.innerWidth}x${window.innerHeight}`);
-    lines.push(`devicePixelRatio: ${window.devicePixelRatio}`);
-
-    const wrappers = document.querySelectorAll<HTMLElement>('.page-wrapper');
-    lines.push(`page-wrapper count: ${wrappers.length}`);
-
-    wrappers.forEach((wrapper, i) => {
-      const cs = getComputedStyle(wrapper);
-      lines.push(`\nwrapper[${i}]:`);
-      lines.push(`  inline style: w=${wrapper.style.width} h=${wrapper.style.height}`);
-      lines.push(`  computed:     w=${cs.width} h=${cs.height}`);
-      lines.push(`  opacity: inline=${wrapper.style.opacity} computed=${cs.opacity}`);
-
-      wrapper.querySelectorAll<HTMLCanvasElement>('canvas').forEach((c, j) => {
-        const cc = getComputedStyle(c);
-        let hasContent = false;
-        try {
-          const px = c.getContext('2d')?.getImageData(c.width >> 1, c.height >> 1, 1, 1).data;
-          hasContent = !!px && px[3] > 0;
-        } catch { /* tainted or no context */ }
-        lines.push(`  canvas[${j}] .${c.className}: attr=${c.width}x${c.height} computed=${cc.width}x${cc.height} hasContent=${hasContent}`);
-      });
-    });
-
-    const text = lines.join('\n');
-    console.log('[PRINT DEBUG]\n' + text);
-    dbgEl.textContent = text;
-    dbgEl.style.display = 'block';
-  });
-
-  window.addEventListener('afterprint', () => {
-    dbgEl.style.display = 'none';
-  });
-}
-// ── END PRINT DEBUG ────────────────────────────────────────────
+document.getElementById('btn-print')!.addEventListener('click',  () => printTab(activeTab));
 
 btnBold.addEventListener('click', () => {
   if (!activeTab?.annotator) return;
@@ -1421,7 +1385,7 @@ document.addEventListener('keydown', async (e) => {
       e.preventDefault(); ann.copy(); return;
     }
   }
-  if (ctrl && e.key === 'p') { e.preventDefault(); window.print(); return; }
+  if (ctrl && e.key === 'p') { e.preventDefault(); printTab(activeTab); return; }
   if (ctrl && e.key === 'r') { e.preventDefault(); if (activeTab) _applyZoomNow(activeTab.viewer.scale); return; }
   if (ctrl && e.key === 'f') { e.preventDefault(); finder.open(); return; }
 

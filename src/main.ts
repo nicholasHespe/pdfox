@@ -234,6 +234,26 @@ ipcMain.handle('reveal-in-explorer', (_event: IpcMainInvokeEvent, filePath: stri
   return { ok: true };
 });
 
+// Open the PDF file in a hidden Chromium window and invoke the system print dialog.
+// This bypasses the canvas renderer entirely so the output is always correct.
+ipcMain.handle('print-pdf', async (_event: IpcMainInvokeEvent, filePath: string): Promise<{ ok: boolean; error?: string }> => {
+  if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'File not found.' };
+
+  const printWin: BW = new BrowserWindow({
+    show: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+
+  await printWin.loadURL('file:///' + filePath.replace(/\\/g, '/'));
+
+  return new Promise(resolve => {
+    printWin.webContents.print({ silent: false }, (success: boolean, errorType: string) => {
+      printWin.destroy();
+      resolve(success ? { ok: true } : { ok: false, error: errorType });
+    });
+  });
+});
+
 // Read / write the extension ID in the native messaging host manifest.
 // The manifest lives next to the Reamlet exe (installed and portable builds).
 function getManifestPath(): string {

@@ -925,19 +925,16 @@ html, body {
 
 /* ── Print ────────────────────────────────────────────────────── */
 @media print {
-  @page { margin: 0; }
   #topbar, #sidebar, #toc-panel, #empty-state, #viewer-scrollbar, #viewer-scrollbar-h { display: none !important; }
   #content-area { position: static; overflow: visible; }
   #viewer-host  { position: static; overflow: visible; }
   .viewer-pane  { display: none; position: static; overflow: visible; }
   .viewer-pane.active { display: block; }
-  .page-wrapper { page-break-after: always; break-after: page; box-shadow: none; width: 100vw !important; height: 100vh !important; overflow: hidden; }
-  .page-wrapper canvas { width: 100% !important; height: 100% !important; }
+  .page-wrapper { page-break-after: always; break-after: page; box-shadow: none; }
   .annot-canvas { display: block; }
   .form-layer   { display: none !important; }
   body { background: white; overflow: visible; }
   html { overflow: visible; }
-  #print-debug-overlay { display: block !important; position: static !important; }
 }
 
 /* ── Context menu ─────────────────────────────────────────────── */
