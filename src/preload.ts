@@ -41,7 +41,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Subscribe to menu events
   onMenuEvent: (callback: (event: string) => void) => {
-    ['menu-open', 'menu-save', 'menu-save-copy', 'menu-close-tab', 'menu-reopen-tab', 'menu-extension-id']
+    ['menu-open', 'menu-save', 'menu-save-copy', 'menu-print', 'menu-close-tab', 'menu-reopen-tab', 'menu-extension-id']
       .forEach(ev => ipcRenderer.on(ev, () => callback(ev)));
   },
 
@@ -60,6 +60,23 @@ contextBridge.exposeInMainWorld('api', {
 
   // Show the file in its containing folder
   revealInExplorer: (filePath: string) => ipcRenderer.invoke('reveal-in-explorer', filePath),
+
+  // Print preview APIs
+  openPrintPreview:       (filePath: string) => ipcRenderer.invoke('open-print-preview', filePath),
+  onPdfData:              (callback: (data: { buffer: ArrayBuffer }) => void) => {
+    ipcRenderer.on('pdf-data', (_e: unknown, data: { buffer: ArrayBuffer }) => callback(data));
+  },
+  getPrinters:            () => ipcRenderer.invoke('get-printers'),
+  openPrinterPreferences: (printerName: string) => ipcRenderer.invoke('open-printer-preferences', printerName),
+  executePrint: (options: {
+    deviceName:  string;
+    copies:      number;
+    color:       boolean;
+    collate:     boolean;
+    duplexMode:  'simplex' | 'longEdge' | 'shortEdge';
+    scaleFactor: number;
+    landscape:   boolean;
+  }) => ipcRenderer.invoke('execute-print', options),
 
   // Initiate a native OS file drag (for dragging into Outlook, Explorer, etc.)
   startDrag: (filePath: string) => ipcRenderer.send('start-drag', filePath),

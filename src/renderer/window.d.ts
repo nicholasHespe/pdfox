@@ -17,6 +17,19 @@ interface Window {
     onCloseTabByFilepath: (callback: (filePath: string) => void) => void;
     copyFileToClipboard: (filePath: string) => Promise<{ ok: boolean }>;
     revealInExplorer:    (filePath: string) => Promise<{ ok: boolean }>;
+    openPrintPreview:       (filePath: string)                                         => Promise<{ ok: boolean; error?: string }>;
+    onPdfData:              (callback: (data: { buffer: ArrayBuffer }) => void)        => void;
+    getPrinters:            ()                                                          => Promise<{ name: string; isDefault: boolean }[]>;
+    openPrinterPreferences: (printerName: string)                                      => Promise<{ ok: boolean }>;
+    executePrint: (options: {
+      deviceName:  string;
+      copies:      number;
+      color:       boolean;
+      collate:     boolean;
+      duplexMode:  string;
+      scaleFactor: number;
+      landscape:   boolean;
+    }) => Promise<{ ok: boolean; error?: string }>;
     startDrag: (filePath: string) => void;
     setUiZoom: (factor: number) => void;
     getUiZoom: () => number;

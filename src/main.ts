@@ -78,6 +78,8 @@ function buildMenu(): void {
         { label: 'Save',        accelerator: 'CmdOrCtrl+S',       click: () => fw()?.webContents.send('menu-save') },
         { label: 'Save Copy…',  accelerator: 'CmdOrCtrl+Shift+S', click: () => fw()?.webContents.send('menu-save-copy') },
         { type: 'separator' },
+        { label: 'Print…',          accelerator: 'CmdOrCtrl+P',           click: () => fw()?.webContents.send('menu-print') },
+        { type: 'separator' },
         { label: 'Close Tab',       accelerator: 'CmdOrCtrl+W',           click: () => fw()?.webContents.send('menu-close-tab') },
         { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T',  click: () => fw()?.webContents.send('menu-reopen-tab') },
         { type: 'separator' },
@@ -122,16 +124,8 @@ ipcMain.handle('open-file-dialog', async (event: IpcMainInvokeEvent) => {
   }));
 });
 
-ipcMain.handle('save-file', async (event: IpcMainInvokeEvent, filePath: string, arrayBuffer: ArrayBuffer) => {
+ipcMain.handle('save-file', async (_event: IpcMainInvokeEvent, filePath: string, arrayBuffer: ArrayBuffer) => {
   if (!filePath) return { ok: false, error: 'no file path' };
-  const win = BrowserWindow.fromWebContents(event.sender);
-  const { response } = await dialog.showMessageBox(win, {
-    type: 'question', buttons: ['Replace', 'Cancel'],
-    defaultId: 0, cancelId: 1,
-    title: 'Save', message: `Replace "${path.basename(filePath)}"?`,
-    detail: 'The existing file will be overwritten with your annotated version.',
-  });
-  if (response !== 0) return { ok: false, error: 'cancelled' };
   try {
     fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
     return { ok: true };
@@ -232,6 +226,79 @@ ipcMain.handle('copy-file-to-clipboard', (_event: IpcMainInvokeEvent, filePath: 
 ipcMain.handle('reveal-in-explorer', (_event: IpcMainInvokeEvent, filePath: string) => {
   shell.showItemInFolder(filePath);
   return { ok: true };
+});
+
+// Return the list of system printers from the print preview window's web contents
+ipcMain.handle('get-printers', async (event: IpcMainInvokeEvent) => {
+  return event.sender.getPrintersAsync();
+});
+
+// Open the Windows printer preferences dialog for the given printer
+ipcMain.handle('open-printer-preferences', async (event: IpcMainInvokeEvent, printerName: string) => {
+  const printers = await event.sender.getPrintersAsync();
+  const valid = printers.some((p: { name: string }) => p.name === printerName);
+  if (!valid) return { ok: false, error: 'Unknown printer.' };
+  const safe = printerName.replace(/["]/g, '');
+  exec(`rundll32 printui.dll,PrintUIEntry /e /n "${safe}"`);
+  return { ok: true };
+});
+
+// Open a visible print preview window where the user can configure and execute printing.
+ipcMain.handle('open-print-preview', async (_event: IpcMainInvokeEvent, filePath: string): Promise<{ ok: boolean; error?: string }> => {
+  if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'File not found.' };
+
+  const previewWin: BW = new BrowserWindow({
+    width: 960,
+    height: 700,
+    minWidth: 600,
+    minHeight: 400,
+    title: 'Print',
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+
+  await previewWin.loadFile(path.join(__dirname, '..', 'renderer', 'print-preview.html'));
+  previewWin.show();
+
+  const buffer = fs.readFileSync(filePath);
+  previewWin.webContents.send('pdf-data', { buffer: buffer.buffer });
+
+  return { ok: true };
+});
+
+// Execute a silent print (no system dialog) from the preview window's renderer process.
+ipcMain.handle('execute-print', (_event: IpcMainInvokeEvent, options: {
+  deviceName:  string;
+  copies:      number;
+  color:       boolean;
+  collate:     boolean;
+  duplexMode:  'simplex' | 'longEdge' | 'shortEdge';
+  scaleFactor: number;
+  landscape:   boolean;
+}): Promise<{ ok: boolean; error?: string }> => {
+  const win = BrowserWindow.fromWebContents(_event.sender);
+  if (!win) return Promise.resolve({ ok: false, error: 'No window.' });
+
+  return new Promise(resolve => {
+    win.webContents.print(
+      {
+        silent:      true,
+        deviceName:  options.deviceName,
+        copies:      options.copies,
+        color:       options.color,
+        collate:     options.collate,
+        duplexMode:  options.duplexMode,
+        scaleFactor: options.scaleFactor,
+        landscape:   options.landscape,
+      },
+      (success: boolean, errorType: string) =>
+        resolve(success ? { ok: true } : { ok: false, error: errorType })
+    );
+  });
 });
 
 // Read / write the extension ID in the native messaging host manifest.

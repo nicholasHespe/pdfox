@@ -329,7 +329,7 @@ tabContextMenu.addEventListener('mousedown', (e) => {
     case 'close':        requestCloseTab(tab); break;
     case 'save':         saveTab(tab); break;
     case 'save-as':      saveTabCopy(tab); break;
-    case 'print':        switchTab(tab); window.print(); break;
+    case 'print':        switchTab(tab); printTab(tab); break;
     case 'copy-file':    window.api.copyFileToClipboard(tab.filePath!); break;
     case 'reveal':       window.api.revealInExplorer(tab.filePath!); break;
     case 'close-others':
@@ -927,8 +927,17 @@ async function saveTab(tab: Tab | null) {
 
   const bytes = await embedAnnotations(tab.pdfBytes, annotations, viewer);
 
-  // Real on-disk file: overwrite after confirmation.
+  // Real on-disk file: confirm overwrite, then save.
   if (tab.filePath && /[\\/]/.test(tab.filePath)) {
+    const name   = tab.filePath.replace(/.*[\\/]/, '');
+    const choice = await showDialog({
+      title:     'Save',
+      message:   `Replace "${name}"?`,
+      buttons:   ['Replace', 'Cancel'],
+      defaultId: 0,
+      cancelId:  1,
+    });
+    if (choice !== 0) return false;
     const res = await window.api.saveFile(tab.filePath, bytes.buffer as ArrayBuffer);
     if (res.ok) {
       tab.pdfBytes     = bytes;
@@ -991,6 +1000,85 @@ async function saveTabCopy(tab: Tab | null) {
     return true;
   }
   return false;
+}
+
+// ── Generic custom dialog ──────────────────────────────────────
+// Builds a modal matching the app's existing style and resolves with
+// the index of the button the user clicked (Escape resolves cancelId).
+function showDialog(options: {
+  title:     string;
+  message:   string;
+  buttons:   string[];
+  defaultId?: number;
+  cancelId?:  number;
+}): Promise<number> {
+  return new Promise(resolve => {
+    const cancelId  = options.cancelId  ?? options.buttons.length - 1;
+    const defaultId = options.defaultId ?? 0;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.style.minWidth = '340px';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'modal-title';
+    titleEl.textContent = options.title;
+    box.appendChild(titleEl);
+
+    const msgEl = document.createElement('p');
+    msgEl.className = 'modal-hint';
+    msgEl.textContent = options.message;
+    box.appendChild(msgEl);
+
+    const footer = document.createElement('div');
+    footer.className = 'modal-footer';
+
+    const dismiss = (idx: number) => {
+      document.removeEventListener('keydown', onKey);
+      document.body.removeChild(overlay);
+      resolve(idx);
+    };
+
+    options.buttons.forEach((label, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'modal-btn' + (i === defaultId ? ' primary' : '');
+      btn.textContent = label;
+      btn.addEventListener('click', () => dismiss(i));
+      footer.appendChild(btn);
+    });
+
+    box.appendChild(footer);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(cancelId); };
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+async function printTab(tab: Tab | null) {
+  if (!tab) return;
+  if (!tab.filePath) {
+    await showDialog({ title: 'Print', message: 'Save the document before printing.', buttons: ['OK'], defaultId: 0, cancelId: 0 });
+    return;
+  }
+  if (tab.dirty) {
+    const name   = tab.filePath.replace(/.*[\\/]/, '');
+    const choice = await showDialog({
+      title:     'Unsaved Changes',
+      message:   `"${name}" has unsaved annotations. Save now so they appear in the printed output.`,
+      buttons:   ['Save and Print', 'Cancel'],
+      defaultId: 0,
+      cancelId:  1,
+    });
+    if (choice !== 0) return;
+    await saveTab(tab);
+    if (tab.dirty) return; // save was cancelled or failed
+  }
+  await window.api.openPrintPreview(tab.filePath);
 }
 
 async function reopenLastTab() {
@@ -1312,7 +1400,7 @@ document.getElementById('btn-redo')!.addEventListener('click',   () => activeTab
 document.getElementById('btn-fit')!.addEventListener('click',    fitWidth);
 document.getElementById('btn-fit-h')!.addEventListener('click',  fitHeight);
 document.getElementById('btn-rotate')!.addEventListener('click', (e) => rotate(e.shiftKey));
-document.getElementById('btn-print')!.addEventListener('click',  () => window.print());
+document.getElementById('btn-print')!.addEventListener('click',  () => printTab(activeTab));
 
 btnBold.addEventListener('click', () => {
   if (!activeTab?.annotator) return;
@@ -1376,7 +1464,7 @@ document.addEventListener('keydown', async (e) => {
       e.preventDefault(); ann.copy(); return;
     }
   }
-  if (ctrl && e.key === 'p') { e.preventDefault(); window.print(); return; }
+  if (ctrl && e.key === 'p') { e.preventDefault(); printTab(activeTab); return; }
   if (ctrl && e.key === 'r') { e.preventDefault(); if (activeTab) _applyZoomNow(activeTab.viewer.scale); return; }
   if (ctrl && e.key === 'f') { e.preventDefault(); finder.open(); return; }
 
@@ -1403,6 +1491,7 @@ const _menuActions = {
   'open':        () => openFile(),
   'save':        () => saveTab(activeTab),
   'save-copy':   () => saveTabCopy(activeTab),
+  'print':       () => printTab(activeTab),
   'close-tab':   () => { if (activeTab) requestCloseTab(activeTab); },
   'reopen-tab':  () => reopenLastTab(),
   'quit':        () => window.close(),
@@ -1459,6 +1548,7 @@ window.api.onMenuEvent((event) => {
     case 'menu-open':         openFile(); break;
     case 'menu-save':         saveTab(activeTab); break;
     case 'menu-save-copy':    saveTabCopy(activeTab); break;
+    case 'menu-print':        printTab(activeTab); break;
     case 'menu-close-tab':    if (activeTab) requestCloseTab(activeTab); break;
     case 'menu-reopen-tab':   reopenLastTab(); break;
     case 'menu-extension-id': _openExtensionIdModal(); break;
@@ -1599,13 +1689,12 @@ async function _executeCombine() {
       const name    = tab.filePath ? tab.filePath.replace(/.*[\\/]/, '') : 'Untitled';
       const hasPath = tab.filePath && /[\\/]/.test(tab.filePath);
       const buttons = ['Discard changes', ...(hasPath ? ['Save'] : []), 'Save As\u2026', 'Cancel'];
-      const choice  = await window.api.showMessageBox({
-        type:      'question',
+      const saveIdx = buttons.includes('Save') ? buttons.indexOf('Save') : buttons.indexOf('Save As\u2026');
+      const choice  = await showDialog({
         title:     'Unsaved Changes',
-        message:   `\u201c${name}\u201d has unsaved annotations.`,
-        detail:    'Choose how to handle them before combining.',
+        message:   `\u201c${name}\u201d has unsaved annotations. Choose how to handle them before combining.`,
         buttons,
-        defaultId: 0,
+        defaultId: saveIdx,
         cancelId:  buttons.indexOf('Cancel'),
       });
       const action = buttons[choice];
