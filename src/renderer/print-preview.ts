@@ -75,6 +75,7 @@ interface PageData {
 }
 const pageData: PageData[] = []; // index 0 = page 1
 const failedPages: number[] = []; // 1-based page numbers that failed to render as PNG
+let _compositeUrls: string[] = []; // blob URLs for composite renders; revoked before each rebuild
 
 // ── Printers ──────────────────────────────────────────────────
 (async () => {
@@ -146,7 +147,7 @@ function getBookletOrder(numPages: number): BookletSheet[] {
 // pageSlots: 1-indexed page numbers; 0 or >totalPages means blank
 // cols: number of columns in the grid
 // targetW/H: canvas output size in px
-function buildComposite(pageSlots: number[], cols: number, targetW: number, targetH: number): HTMLImageElement {
+async function buildComposite(pageSlots: number[], cols: number, targetW: number, targetH: number): Promise<HTMLImageElement> {
   const rows = Math.ceil(pageSlots.length / cols);
   const canvas = document.createElement('canvas');
   canvas.width  = targetW;
@@ -185,8 +186,13 @@ function buildComposite(pageSlots: number[], cols: number, targetW: number, targ
     ctx.strokeRect(slotX + 0.25, slotY + 0.25, slotW - 0.5, slotH - 0.5);
   });
 
+  const blob = await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas.toBlob failed')), 'image/png')
+  );
+  const url = URL.createObjectURL(blob);
+  _compositeUrls.push(url);
   const out = new Image();
-  out.src = canvas.toDataURL('image/png');
+  await new Promise<void>(resolve => { out.onload = () => resolve(); out.src = url; });
   return out;
 }
 
@@ -203,8 +209,13 @@ function addPreviewPage(imgEl: HTMLImageElement, paperW: number, paperH: number)
 }
 
 // ── Build / refresh the preview ───────────────────────────────
-function renderPreview() {
+async function renderPreview() {
   if (pageData.length === 0) return;
+
+  // Revoke blob URLs from the previous render before rebuilding.
+  _compositeUrls.forEach(u => URL.revokeObjectURL(u));
+  _compositeUrls = [];
+
   previewArea.innerHTML = '';
 
   const isBooklet = chkBooklet.checked;
@@ -224,13 +235,13 @@ function renderPreview() {
   if (isBooklet) {
     // Booklet: always uses all pages; composites are landscape (2× wide)
     const sheets = getBookletOrder(totalPages);
-    sheets.forEach(sheet => {
-      (['front', 'back'] as const).forEach(side => {
+    for (const sheet of sheets) {
+      for (const side of ['front', 'back'] as const) {
         const [lp, rp] = sheet[side];
-        const img = buildComposite([lp, rp], 2, paperW * 2, paperH);
+        const img = await buildComposite([lp, rp], 2, paperW * 2, paperH);
         addPreviewPage(img, paperW * 2, paperH);
-      });
-    });
+      }
+    }
   } else if (pps > 1) {
     // Pages per sheet: group visible pages into chunks, create composite
     const PPS_COLS: Record<number, number> = { 2: 2, 4: 2, 6: 3, 9: 3, 16: 4 };
@@ -243,7 +254,7 @@ function renderPreview() {
     for (let i = 0; i < visible.length; i += pps) {
       const chunk = visible.slice(i, i + pps);
       while (chunk.length < pps) chunk.push(0); // pad with blanks
-      const img = buildComposite(chunk, cols, paperW, paperH);
+      const img = await buildComposite(chunk, cols, paperW, paperH);
       addPreviewPage(img, paperW, paperH);
     }
   } else {
