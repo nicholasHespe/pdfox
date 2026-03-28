@@ -339,8 +339,9 @@ export async function embedWatermark(pdfBytes: Uint8Array, config: WatermarkConf
 
     lines.forEach((line, li) => {
       const textWidth  = font.widthOfTextAtSize(line, config.fontSize);
-      // Perpendicular offset (CCW 90° from text direction) to space lines
-      const perpOffset = (li - (lines.length - 1) / 2) * lineHeight;
+      // Perpendicular offset (CCW 90° from text direction) to space lines.
+      // Positive perpOffset moves toward the visual top of the page; line 0 is topmost.
+      const perpOffset = ((lines.length - 1) / 2 - li) * lineHeight;
 
       // Centre each line at page centre then offset perpendicularly
       const x = pdfW / 2
