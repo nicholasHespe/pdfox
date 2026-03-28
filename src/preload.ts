@@ -73,7 +73,7 @@ contextBridge.exposeInMainWorld('api', {
     copies:      number;
     color:       boolean;
     collate:     boolean;
-    duplexMode:  string;
+    duplexMode:  'simplex' | 'longEdge' | 'shortEdge';
     scaleFactor: number;
     landscape:   boolean;
   }) => ipcRenderer.invoke('execute-print', options),

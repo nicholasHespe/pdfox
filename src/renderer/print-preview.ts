@@ -41,6 +41,7 @@ let pageData: PageData[] = []; // index 0 = page 1
     const opt = document.createElement('option');
     opt.textContent = 'No printers found';
     selPrinter.appendChild(opt);
+    btnPrint.disabled = true;
     return;
   }
   printers.forEach((p: { name: string; isDefault: boolean }) => {
@@ -125,6 +126,15 @@ function buildComposite(pageSlots: number[], cols: number, targetW: number, targ
       const scale = Math.min(slotW / naturalW, slotH / naturalH);
       const dw = naturalW * scale, dh = naturalH * scale;
       ctx.drawImage(img, slotX + (slotW - dw) / 2, slotY + (slotH - dh) / 2, dw, dh);
+    } else {
+      // Blank slot — subtle fill and label so users know it's intentional
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(slotX + 0.5, slotY + 0.5, slotW - 1, slotH - 1);
+      ctx.font = `${Math.round(Math.min(slotW, slotH) * 0.07)}px system-ui, sans-serif`;
+      ctx.fillStyle = '#bbb';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Blank', slotX + slotW / 2, slotY + slotH / 2);
     }
     // Faint slot border
     ctx.strokeStyle = '#ddd';
@@ -233,43 +243,70 @@ btnPrint.addEventListener('click', async () => {
 
   btnPrint.disabled = true;
   statusEl.textContent = 'Printing…';
-  await window.api.executePrint({
-    deviceName: selPrinter.value,
-    copies,
-    color:      !grey,
-    collate:    chkCollate.checked,
-    duplexMode,
-    scaleFactor,
-    landscape,
-  });
+  try {
+    const result = await window.api.executePrint({
+      deviceName: selPrinter.value,
+      copies,
+      color:      !grey,
+      collate:    chkCollate.checked,
+      duplexMode,
+      scaleFactor,
+      landscape,
+    });
+    if (!result.ok) {
+      statusEl.textContent = `Print failed: ${result.error ?? 'unknown error'}`;
+      btnPrint.disabled = false;
+      return;
+    }
+  } catch (err) {
+    statusEl.textContent = `Print error: ${(err as Error).message}`;
+    btnPrint.disabled = false;
+    return;
+  }
   window.close();
 });
 
 // ── Receive PDF data from main ─────────────────────────────────
 window.api.onPdfData(async ({ buffer }) => {
   statusEl.textContent = 'Rendering pages…';
-  const bytes  = new Uint8Array(buffer);
-  const pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
-  totalPages   = pdfDoc.numPages;
 
-  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-    const page     = await pdfDoc.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas   = document.createElement('canvas');
-    canvas.width   = viewport.width;
-    canvas.height  = viewport.height;
-    await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+  let pdfDoc;
+  try {
+    const bytes = new Uint8Array(buffer);
+    pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+  } catch (err) {
+    statusEl.textContent = `Failed to load PDF: ${(err as Error).message}`;
+    return;
+  }
+  totalPages = pdfDoc.numPages;
 
-    const dataUrl  = canvas.toDataURL('image/png');
-    const img      = new Image();
-    await new Promise<void>(resolve => { img.onload = () => resolve(); img.src = dataUrl; });
+  try {
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const page     = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas   = document.createElement('canvas');
+      canvas.width   = viewport.width;
+      canvas.height  = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
 
-    pageData.push({
-      img,
-      naturalW: viewport.width  / 1.5,
-      naturalH: viewport.height / 1.5,
-    });
-    statusEl.textContent = `Rendering… ${pageNum}/${totalPages}`;
+      const dataUrl  = canvas.toDataURL('image/png');
+      const img      = new Image();
+      await new Promise<void>(resolve => {
+        img.onload  = () => resolve();
+        img.onerror = () => resolve(); // silently skip bad frames
+        img.src = dataUrl;
+      });
+
+      pageData.push({
+        img,
+        naturalW: viewport.width  / 1.5,
+        naturalH: viewport.height / 1.5,
+      });
+      statusEl.textContent = `Rendering… ${pageNum}/${totalPages}`;
+    }
+  } catch (err) {
+    statusEl.textContent = `Rendering error: ${(err as Error).message}`;
+    return;
   }
 
   statusEl.textContent = `${totalPages} page${totalPages === 1 ? '' : 's'}`;

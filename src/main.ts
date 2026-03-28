@@ -240,7 +240,10 @@ ipcMain.handle('get-printers', async (event: IpcMainInvokeEvent) => {
 });
 
 // Open the Windows printer preferences dialog for the given printer
-ipcMain.handle('open-printer-preferences', (_event: IpcMainInvokeEvent, printerName: string) => {
+ipcMain.handle('open-printer-preferences', async (event: IpcMainInvokeEvent, printerName: string) => {
+  const printers = await event.sender.getPrintersAsync();
+  const valid = printers.some((p: { name: string }) => p.name === printerName);
+  if (!valid) return { ok: false, error: 'Unknown printer.' };
   const safe = printerName.replace(/["]/g, '');
   exec(`rundll32 printui.dll,PrintUIEntry /e /n "${safe}"`);
   return { ok: true };
