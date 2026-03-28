@@ -865,6 +865,86 @@ html, body {
   line-height: 1;
 }
 .reorder-arrow:hover { background: var(--border); }
+.reorder-remove { color: #c55; }
+.reorder-remove:hover { color: #e33; background: var(--border); }
+
+/* ── Footer modal ────────────────────────────────────────────── */
+#footer-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.footer-col { display: flex; flex-direction: column; gap: 4px; }
+.footer-col label { font-size: 11px; color: #999; }
+.footer-col select,
+.footer-col input[type="text"] {
+  padding: 5px 7px;
+  background: #2a2a2a;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 12px;
+}
+.footer-col select { cursor: pointer; }
+.footer-custom-hidden { visibility: hidden; }
+.footer-size-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 10px;
+}
+.footer-size-row input {
+  padding: 4px 6px;
+  background: #2a2a2a;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 12px;
+}
+#footer-preview {
+  display: block;
+  width: 100%;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+/* ── Watermark modal ─────────────────────────────────────────── */
+#watermark-modal-body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.wm-fields { flex: 1; min-width: 0; }
+.wm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.wm-row label { width: 72px; color: #999; flex-shrink: 0; }
+.wm-row input[type="text"],
+.wm-row input[type="number"],
+.wm-row textarea {
+  padding: 5px 7px;
+  background: #2a2a2a;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+}
+.wm-row textarea { min-height: 52px; }
+.wm-row span { color: #999; }
+#watermark-opacity-val { min-width: 32px; text-align: right; color: var(--text); }
+#watermark-preview {
+  flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
 
 /* ── Loading spinner ─────────────────────────────────────────── */
 .loading-overlay {
