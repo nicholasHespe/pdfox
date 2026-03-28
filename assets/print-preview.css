@@ -118,7 +118,7 @@ details[open] summary { margin-bottom: 8px; }
 
 /* ── Preview pages ────────────────────────────────────────────── */
 .print-page { background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
-.print-page img { display: block; max-width: 100%; }
+.print-page img { display: block; }
 .greyscale .print-page img { filter: grayscale(1); }
 
 /* ── Print output ─────────────────────────────────────────────── */
@@ -128,7 +128,7 @@ details[open] summary { margin-bottom: 8px; }
   #preview-toolbar { display: none !important; }
   body { display: block; overflow: visible; }
   #preview-wrapper { display: block; overflow: visible; }
-  #preview-area { padding: 0; gap: 0; background: white; overflow: visible; display: block; }
+  #preview-area { padding: 0; gap: 0; background: white; overflow: visible; display: block; zoom: normal; }
   /* Each page wrapper fills exactly one sheet of paper */
   .print-page {
     box-shadow: none;

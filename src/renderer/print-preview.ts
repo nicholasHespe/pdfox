@@ -35,11 +35,10 @@ const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75,
 function setPreviewZoom(z: number) {
   previewZoom = z;
   zoomLabel.textContent = `${Math.round(z * 100)}%`;
-  const minIdx = 0, maxIdx = ZOOM_STEPS.length - 1;
   const curIdx = ZOOM_STEPS.indexOf(z);
-  btnZoomOut.disabled = curIdx <= minIdx;
-  btnZoomIn.disabled  = curIdx >= maxIdx;
-  renderPreview();
+  btnZoomOut.disabled = curIdx <= 0;
+  btnZoomIn.disabled  = curIdx >= ZOOM_STEPS.length - 1;
+  previewArea.style.zoom = String(z);
 }
 
 btnZoomOut.addEventListener('click', () => {
@@ -174,9 +173,7 @@ function buildComposite(pageSlots: number[], cols: number, targetW: number, targ
 
 // ── Add a page wrapper to the preview ────────────────────────
 function addPreviewPage(imgEl: HTMLImageElement, displayW: number, displayH: number) {
-  const scaledW = Math.round(displayW * previewZoom);
-  const scaledH = Math.round(displayH * previewZoom);
-  imgEl.style.cssText = `width:${scaledW}px; height:${scaledH}px; max-width:100%;`;
+  imgEl.style.cssText = `width:${displayW}px; height:${displayH}px;`;
   const wrapper = document.createElement('div');
   wrapper.className = 'print-page';
   wrapper.appendChild(imgEl);
