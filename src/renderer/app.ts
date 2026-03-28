@@ -1746,7 +1746,7 @@ inputCtxMenu.addEventListener('mousedown', (e) => {
     case 'paste':
       navigator.clipboard.readText().then(text => {
         input.setRangeText(text, input.selectionStart ?? 0, input.selectionEnd ?? 0, 'end');
-      });
+      }).catch(() => { /* clipboard access denied — nothing to paste */ });
       break;
   }
 });
