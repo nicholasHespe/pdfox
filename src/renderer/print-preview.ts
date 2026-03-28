@@ -22,9 +22,34 @@ const chkBooklet     = document.getElementById('chk-booklet')      as HTMLInputE
 const btnPrint       = document.getElementById('btn-print')        as HTMLButtonElement;
 const btnClose       = document.getElementById('btn-close')        as HTMLButtonElement;
 const statusEl       = document.getElementById('status')!;
+const btnZoomOut     = document.getElementById('btn-zoom-out')     as HTMLButtonElement;
+const btnZoomIn      = document.getElementById('btn-zoom-in')      as HTMLButtonElement;
+const zoomLabel      = document.getElementById('zoom-label')!;
 
 // ── State ─────────────────────────────────────────────────────
 let totalPages = 0;
+let previewZoom = 1.0;
+
+const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+
+function setPreviewZoom(z: number) {
+  previewZoom = z;
+  zoomLabel.textContent = `${Math.round(z * 100)}%`;
+  const minIdx = 0, maxIdx = ZOOM_STEPS.length - 1;
+  const curIdx = ZOOM_STEPS.indexOf(z);
+  btnZoomOut.disabled = curIdx <= minIdx;
+  btnZoomIn.disabled  = curIdx >= maxIdx;
+  renderPreview();
+}
+
+btnZoomOut.addEventListener('click', () => {
+  const curIdx = ZOOM_STEPS.indexOf(previewZoom);
+  if (curIdx > 0) setPreviewZoom(ZOOM_STEPS[curIdx - 1]);
+});
+btnZoomIn.addEventListener('click', () => {
+  const curIdx = ZOOM_STEPS.indexOf(previewZoom);
+  if (curIdx < ZOOM_STEPS.length - 1) setPreviewZoom(ZOOM_STEPS[curIdx + 1]);
+});
 
 interface PageData {
   img: HTMLImageElement; // loaded at 1.5× scale
@@ -149,9 +174,12 @@ function buildComposite(pageSlots: number[], cols: number, targetW: number, targ
 
 // ── Add a page wrapper to the preview ────────────────────────
 function addPreviewPage(imgEl: HTMLImageElement, displayW: number, displayH: number) {
-  imgEl.style.cssText = `width:${displayW}px; height:${displayH}px; max-width:100%;`;
+  const scaledW = Math.round(displayW * previewZoom);
+  const scaledH = Math.round(displayH * previewZoom);
+  imgEl.style.cssText = `width:${scaledW}px; height:${scaledH}px; max-width:100%;`;
   const wrapper = document.createElement('div');
   wrapper.className = 'print-page';
+  if (displayW > displayH) wrapper.classList.add('landscape');
   wrapper.appendChild(imgEl);
   previewArea.appendChild(wrapper);
 }
@@ -239,9 +267,8 @@ btnPrint.addEventListener('click', async () => {
   const scaleVal    = selScale.value;
   const scaleFactor = (scaleVal === 'fit' || scaleVal === '100') ? 100 : parseInt(scaleVal);
   const duplexMode  = selDuplex.value as 'simplex' | 'longEdge' | 'shortEdge';
-  // Booklet composites are always landscape; otherwise follow the first page's orientation
-  const landscape   = chkBooklet.checked ||
-    (pageData.length > 0 && pageData[0].naturalW > pageData[0].naturalH);
+  // Orientation is handled per-page via CSS @page named pages; always default portrait here
+  const landscape   = false;
 
   btnPrint.disabled = true;
   statusEl.textContent = 'Printing…';

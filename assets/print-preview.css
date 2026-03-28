@@ -23,6 +23,37 @@ body {
   overflow-y: auto;
 }
 #settings-panel h3 { margin: 0 0 12px; font-size: 14px; color: #eee; }
+#preview-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #3c3c3c;
+}
+#preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #222;
+  flex-shrink: 0;
+}
+#preview-toolbar button {
+  background: #3c3c3c;
+  color: #ccc;
+  border: 1px solid #555;
+  border-radius: 3px;
+  width: 24px;
+  height: 22px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+#preview-toolbar button:hover:not(:disabled) { background: #4c4c4c; }
+#preview-toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+#zoom-label { font-size: 12px; color: #999; min-width: 38px; text-align: center; }
 #preview-area {
   flex: 1;
   overflow-y: auto;
@@ -31,7 +62,6 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  background: #3c3c3c;
 }
 
 /* ── Settings sections ────────────────────────────────────────── */
@@ -92,12 +122,18 @@ details[open] summary { margin-bottom: 8px; }
 .greyscale .print-page img { filter: grayscale(1); }
 
 /* ── Print output ─────────────────────────────────────────────── */
+@page { margin: 0; size: portrait; }
+@page landscape-page { margin: 0; size: landscape; }
+
 @media print {
-  @page { margin: 0; size: auto; }
+  @page { margin: 0; size: portrait; }
   #settings-panel { display: none !important; }
+  #preview-toolbar { display: none !important; }
   body { display: block; overflow: visible; }
+  #preview-wrapper { display: block; overflow: visible; }
   #preview-area { padding: 0; gap: 0; background: white; overflow: visible; display: block; }
   /* Each page wrapper fills exactly one sheet of paper */
+  .print-page.landscape { page: landscape-page; }
   .print-page {
     box-shadow: none;
     page-break-after: always;

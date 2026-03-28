@@ -1412,6 +1412,7 @@ const _menuActions = {
   'open':        () => openFile(),
   'save':        () => saveTab(activeTab),
   'save-copy':   () => saveTabCopy(activeTab),
+  'print':       () => printTab(activeTab),
   'close-tab':   () => { if (activeTab) requestCloseTab(activeTab); },
   'reopen-tab':  () => reopenLastTab(),
   'quit':        () => window.close(),
