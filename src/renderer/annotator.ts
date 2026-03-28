@@ -27,8 +27,7 @@ export class Annotator {
   _dragOrigAnn: Annotation | null;
   _dragPageRect: DOMRect | null;
   _clipboard: Annotation | null;
-  _history: string[];
-  _histIdx: number;
+  onCommit?: () => void;
   _handlers: Record<number, unknown>;
   _docMouseupHighlight!: (e: MouseEvent) => void;
   _docMousemoveDrag!: (e: MouseEvent) => void;
@@ -71,9 +70,6 @@ export class Annotator {
     this._lastCursorPageNum = null;
     this._lastCursorNorm    = null;
 
-    this._history = ['[]'];
-    this._histIdx = 0;
-
     this._handlers = {};
     this._attachAll();
   }
@@ -109,8 +105,6 @@ export class Annotator {
       const ctx = p.annotCanvas.getContext('2d')!;
       ctx.clearRect(0, 0, p.annotCanvas.width, p.annotCanvas.height);
     });
-    this._history = ['[]'];
-    this._histIdx = 0;
   }
 
   redrawAll() {
@@ -149,20 +143,9 @@ export class Annotator {
     }
   }
 
-  undo() {
-    if (this._histIdx <= 0) return;
-    this._histIdx--;
+  setAnnotations(json: string) {
     this._clearSelection(false);
-    const data = JSON.parse(this._history[this._histIdx]);
-    this.annotations.splice(0, this.annotations.length, ...data);
-    this.redrawAll();
-  }
-
-  redo() {
-    if (this._histIdx >= this._history.length - 1) return;
-    this._histIdx++;
-    this._clearSelection(false);
-    const data = JSON.parse(this._history[this._histIdx]);
+    const data = JSON.parse(json) as Annotation[];
     this.annotations.splice(0, this.annotations.length, ...data);
     this.redrawAll();
   }
@@ -988,8 +971,6 @@ export class Annotator {
   // ── Undo / redo history ──────────────────────────────────────
 
   _pushHistory() {
-    this._history.splice(this._histIdx + 1);
-    this._history.push(JSON.stringify([...this.annotations]));
-    this._histIdx++;
+    this.onCommit?.();
   }
 }

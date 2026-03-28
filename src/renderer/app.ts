@@ -10,7 +10,7 @@ import type * as PDFLibNS from 'pdf-lib';
 import type { OutlineNode } from './types.js';
 const { PDFDocument } = _pdfLib as unknown as typeof PDFLibNS;
 import { FindBar }          from './find.js';
-import type { Tab, CloseContext } from './types.js';
+import type { Tab, CloseContext, Annotation } from './types.js';
 
 // ── State ──────────────────────────────────────────────────────
 
@@ -844,6 +844,7 @@ async function _loadTabContent(tab: Tab) {
     await tab.viewer.load(tab.pdfBytes);
     tab.annotator = new Annotator(tab.viewer.pages, tab.viewer);
     _patchAnnotatorForDirty(tab);
+    _pushUndo(tab);
     tab.outline = await tab.viewer.getOutline();
   } catch (err) {
     const name = tab.filePath ? tab.filePath.split(/[\\/]/).pop() : 'file';
@@ -1109,6 +1110,46 @@ function _patchAnnotatorForDirty(tab: Tab) {
     },
   });
   tab.annotator!.annotations = proxy;
+  tab.annotator!.onCommit = () => _pushUndo(tab);
+}
+
+// ── Unified undo / redo ────────────────────────────────────────
+
+const UNDO_LIMIT = 20;
+let _undoing = false;
+
+function _pushUndo(tab: Tab): void {
+  if (_undoing) return;
+  const annotations = tab.annotator ? JSON.stringify(tab.annotator.annotations) : '[]';
+  if (!tab._undoStack) { tab._undoStack = []; tab._undoIdx = -1; }
+  tab._undoStack.splice(tab._undoIdx! + 1);
+  tab._undoStack.push({ pdfBytes: tab.pdfBytes, annotations });
+  if (tab._undoStack.length > UNDO_LIMIT) tab._undoStack.shift();
+  tab._undoIdx = tab._undoStack.length - 1;
+}
+
+async function _applyUndo(tab: Tab, entry: { pdfBytes: Uint8Array; annotations: string }): Promise<void> {
+  const prevBytes = tab.pdfBytes;
+  tab.pdfBytes = entry.pdfBytes;
+  if (entry.pdfBytes !== prevBytes) {
+    const scrollTop = tab.pane.scrollTop;
+    const reloadEl = document.createElement('div');
+    reloadEl.className = 'loading-overlay';
+    reloadEl.innerHTML = '<div class="spinner"></div>';
+    tab.pane.appendChild(reloadEl);
+    tab.loadingEl = reloadEl;
+    finder.invalidateTab(tab);
+    await _loadTabContent(tab);
+    const data = JSON.parse(entry.annotations) as Annotation[];
+    if (data.length > 0) {
+      tab.annotator!.annotations.splice(0, tab.annotator!.annotations.length, ...data);
+      tab.annotator!.redrawAll();
+    }
+    requestAnimationFrame(() => { tab.pane.scrollTop = scrollTop; });
+  } else {
+    tab.annotator?.setAnnotations(entry.annotations);
+  }
+  markDirty(tab);
 }
 
 // ── Zoom ───────────────────────────────────────────────────────
@@ -1395,8 +1436,25 @@ document.querySelectorAll('.swatch').forEach(s => {
   });
 });
 
-document.getElementById('btn-undo')!.addEventListener('click',   () => activeTab?.annotator?.undo());
-document.getElementById('btn-redo')!.addEventListener('click',   () => activeTab?.annotator?.redo());
+document.getElementById('btn-undo')!.addEventListener('click', async () => {
+  if (_undoing) return;
+  const tab = activeTab;
+  if (!tab?._undoStack || (tab._undoIdx ?? -1) <= 0) return;
+  const idx = tab._undoIdx!;
+  tab._undoIdx = idx - 1;
+  _undoing = true;
+  try { await _applyUndo(tab, tab._undoStack[idx - 1]); } finally { _undoing = false; }
+});
+document.getElementById('btn-redo')!.addEventListener('click', async () => {
+  if (_undoing) return;
+  const tab = activeTab;
+  if (!tab?._undoStack) return;
+  const idx = tab._undoIdx ?? -1;
+  if (idx >= tab._undoStack.length - 1) return;
+  tab._undoIdx = idx + 1;
+  _undoing = true;
+  try { await _applyUndo(tab, tab._undoStack[idx + 1]); } finally { _undoing = false; }
+});
 document.getElementById('btn-fit')!.addEventListener('click',    fitWidth);
 document.getElementById('btn-fit-h')!.addEventListener('click',  fitHeight);
 document.getElementById('btn-rotate')!.addEventListener('click', (e) => rotate(e.shiftKey));
@@ -1454,8 +1512,29 @@ document.addEventListener('keydown', async (e) => {
   if (ctrl && e.key === '0') { e.preventDefault(); fitWidth(); return; }
   if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
 
-  if (ctrl && e.key === 'z') { e.preventDefault(); activeTab?.annotator?.undo(); return; }
-  if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); activeTab?.annotator?.redo(); return; }
+  if (ctrl && e.key === 'z') {
+    e.preventDefault();
+    if (_undoing) return;
+    const tab = activeTab;
+    if (!tab?._undoStack || (tab._undoIdx ?? -1) <= 0) return;
+    const idx = tab._undoIdx!;
+    tab._undoIdx = idx - 1;
+    _undoing = true;
+    try { await _applyUndo(tab, tab._undoStack[idx - 1]); } finally { _undoing = false; }
+    return;
+  }
+  if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
+    e.preventDefault();
+    if (_undoing) return;
+    const tab = activeTab;
+    if (!tab?._undoStack) return;
+    const idx = tab._undoIdx ?? -1;
+    if (idx >= tab._undoStack.length - 1) return;
+    tab._undoIdx = idx + 1;
+    _undoing = true;
+    try { await _applyUndo(tab, tab._undoStack[idx + 1]); } finally { _undoing = false; }
+    return;
+  }
   if (ctrl && e.key === 'x') { e.preventDefault(); activeTab?.annotator?.cut(); return; }
   if (ctrl && e.key === 'v') { e.preventDefault(); activeTab?.annotator?.paste(); return; }
   if (ctrl && e.key === 'c') {
@@ -1876,6 +1955,7 @@ async function _executeReorder() {
   pages.forEach(p => resultDoc.addPage(p));
   const bytes = await resultDoc.save();
 
+  _pushUndo(tab);
   tab.pdfBytes = bytes;
   tab.annotator!.clear();
   // Re-add loading overlay for the re-render
@@ -2000,6 +2080,7 @@ async function _executeFooter() {
   const tab   = activeTab;
   const bytes = await embedFooter(tab.pdfBytes, { left, center, right, fontSize });
 
+  _pushUndo(tab);
   tab.pdfBytes = bytes;
   tab.annotator!.clear();
   const reloadEl = document.createElement('div');
@@ -2089,6 +2170,7 @@ async function _executeWatermark() {
   const tab   = activeTab;
   const bytes = await embedWatermark(tab.pdfBytes, { text, fontSize, opacity, angle });
 
+  _pushUndo(tab);
   tab.pdfBytes = bytes;
   tab.annotator!.clear();
   const reloadEl = document.createElement('div');

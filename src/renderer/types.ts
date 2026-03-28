@@ -87,6 +87,8 @@ export interface Tab {
   _savedBytes?: Uint8Array | null;
   _findCache?: Map<number, FindCacheEntry>;
   _notBeenViewed?: boolean;
+  _undoStack?: Array<{ pdfBytes: Uint8Array; annotations: string }>;
+  _undoIdx?: number;
 }
 
 // ── CloseContext ──────────────────────────────────────────────
