@@ -428,14 +428,17 @@ function downloadPdfToTemp(url: string, redirectsLeft = 5): Promise<string> {
         return;
       }
 
-      let fileName: string;
+      let baseName: string;
       try {
         const base = path.basename(new URL(url).pathname) || 'download';
-        fileName = base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+        baseName = base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
       } catch {
-        fileName = 'download.pdf';
+        baseName = 'download.pdf';
       }
-      const filePath = path.join(tempDir, fileName);
+      // Prefix with a random token to prevent concurrent downloads of the same
+      // URL from racing to write the same temp file.
+      const token    = Math.random().toString(36).slice(2, 10);
+      const filePath = path.join(tempDir, `${token}-${baseName}`);
       const fileStream = fs.createWriteStream(filePath);
       res.pipe(fileStream);
       fileStream.on('finish', () => {
