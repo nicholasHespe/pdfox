@@ -1121,7 +1121,31 @@ function _patchAnnotatorForDirty(tab: Tab) {
 // ── Unified undo / redo ────────────────────────────────────────
 
 const UNDO_LIMIT = 20;
+// Maximum total bytes held by unique PDF snapshots across the undo stack.
+// Consecutive annotation-only entries share the same Uint8Array reference and
+// are counted only once, so annotation edits on large files remain cheap.
+const MAX_UNDO_BYTES = 200 * 1024 * 1024; // 200 MB
 let _undoing = false;
+
+function _undoStackBytes(stack: Array<{ pdfBytes: Uint8Array; annotations: string }>): number {
+  const seen = new Set<Uint8Array>();
+  let total = 0;
+  for (const entry of stack) {
+    if (!seen.has(entry.pdfBytes)) {
+      seen.add(entry.pdfBytes);
+      total += entry.pdfBytes.byteLength;
+    }
+  }
+  return total;
+}
+
+function _shiftOldestUndo(tab: Tab): void {
+  tab._undoStack!.shift();
+  if (tab._undoCleanIdx != null) {
+    tab._undoCleanIdx--;
+    if (tab._undoCleanIdx < 0) tab._undoCleanIdx = null; // clean entry was dropped
+  }
+}
 
 function _pushUndo(tab: Tab): void {
   if (_undoing) return;
@@ -1134,13 +1158,11 @@ function _pushUndo(tab: Tab): void {
     tab._undoStack.splice(nextIdx);
   }
   tab._undoStack.push({ pdfBytes: tab.pdfBytes, annotations });
-  // Enforce limit. If the oldest entry is dropped, shift the clean index down with it.
-  if (tab._undoStack.length > UNDO_LIMIT) {
-    tab._undoStack.shift();
-    if (tab._undoCleanIdx != null) {
-      tab._undoCleanIdx--;
-      if (tab._undoCleanIdx < 0) tab._undoCleanIdx = null; // clean entry was dropped
-    }
+  // Enforce count limit.
+  if (tab._undoStack.length > UNDO_LIMIT) _shiftOldestUndo(tab);
+  // Enforce byte budget: drop oldest entries (never below 1) until under budget.
+  while (tab._undoStack.length > 1 && _undoStackBytes(tab._undoStack) > MAX_UNDO_BYTES) {
+    _shiftOldestUndo(tab);
   }
   tab._undoIdx = tab._undoStack.length - 1;
 }
