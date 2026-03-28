@@ -61,17 +61,22 @@ contextBridge.exposeInMainWorld('api', {
   // Show the file in its containing folder
   revealInExplorer: (filePath: string) => ipcRenderer.invoke('reveal-in-explorer', filePath),
 
-  // Open a visible print preview window for the given PDF file
-  openPrintPreview: (filePath: string) => ipcRenderer.invoke('open-print-preview', filePath),
-
-  // Receive PDF data pushed from main into the print preview window
-  onPdfData: (callback: (data: { buffer: ArrayBuffer }) => void) => {
+  // Print preview APIs
+  openPrintPreview:       (filePath: string) => ipcRenderer.invoke('open-print-preview', filePath),
+  onPdfData:              (callback: (data: { buffer: ArrayBuffer }) => void) => {
     ipcRenderer.on('pdf-data', (_e: unknown, data: { buffer: ArrayBuffer }) => callback(data));
   },
-
-  // Trigger the system print dialog from the preview window
-  executePrint: (options: { copies: number; color: boolean; scaleFactor: number }) =>
-    ipcRenderer.invoke('execute-print', options),
+  getPrinters:            () => ipcRenderer.invoke('get-printers'),
+  openPrinterPreferences: (printerName: string) => ipcRenderer.invoke('open-printer-preferences', printerName),
+  executePrint: (options: {
+    deviceName:  string;
+    copies:      number;
+    color:       boolean;
+    collate:     boolean;
+    duplexMode:  string;
+    scaleFactor: number;
+    landscape:   boolean;
+  }) => ipcRenderer.invoke('execute-print', options),
 
   // Initiate a native OS file drag (for dragging into Outlook, Explorer, etc.)
   startDrag: (filePath: string) => ipcRenderer.send('start-drag', filePath),

@@ -234,6 +234,18 @@ ipcMain.handle('reveal-in-explorer', (_event: IpcMainInvokeEvent, filePath: stri
   return { ok: true };
 });
 
+// Return the list of system printers from the print preview window's web contents
+ipcMain.handle('get-printers', async (event: IpcMainInvokeEvent) => {
+  return event.sender.getPrintersAsync();
+});
+
+// Open the Windows printer preferences dialog for the given printer
+ipcMain.handle('open-printer-preferences', (_event: IpcMainInvokeEvent, printerName: string) => {
+  const safe = printerName.replace(/["]/g, '');
+  exec(`rundll32 printui.dll,PrintUIEntry /e /n "${safe}"`);
+  return { ok: true };
+});
+
 // Open a visible print preview window where the user can configure and execute printing.
 ipcMain.handle('open-print-preview', async (_event: IpcMainInvokeEvent, filePath: string): Promise<{ ok: boolean; error?: string }> => {
   if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'File not found.' };
@@ -261,15 +273,33 @@ ipcMain.handle('open-print-preview', async (_event: IpcMainInvokeEvent, filePath
   return { ok: true };
 });
 
-// Execute the print dialog from the preview window's renderer process.
-ipcMain.handle('execute-print', (_event: IpcMainInvokeEvent, options: { copies: number; color: boolean; scaleFactor: number }): Promise<{ ok: boolean; error?: string }> => {
+// Execute a silent print (no system dialog) from the preview window's renderer process.
+ipcMain.handle('execute-print', (_event: IpcMainInvokeEvent, options: {
+  deviceName:  string;
+  copies:      number;
+  color:       boolean;
+  collate:     boolean;
+  duplexMode:  'simplex' | 'longEdge' | 'shortEdge';
+  scaleFactor: number;
+  landscape:   boolean;
+}): Promise<{ ok: boolean; error?: string }> => {
   const win = BrowserWindow.fromWebContents(_event.sender);
   if (!win) return Promise.resolve({ ok: false, error: 'No window.' });
 
   return new Promise(resolve => {
     win.webContents.print(
-      { silent: false, copies: options.copies, color: options.color, scaleFactor: options.scaleFactor },
-      (success: boolean, errorType: string) => resolve(success ? { ok: true } : { ok: false, error: errorType })
+      {
+        silent:      true,
+        deviceName:  options.deviceName,
+        copies:      options.copies,
+        color:       options.color,
+        collate:     options.collate,
+        duplexMode:  options.duplexMode,
+        scaleFactor: options.scaleFactor,
+        landscape:   options.landscape,
+      },
+      (success: boolean, errorType: string) =>
+        resolve(success ? { ok: true } : { ok: false, error: errorType })
     );
   });
 });
