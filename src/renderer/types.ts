@@ -89,6 +89,7 @@ export interface Tab {
   _notBeenViewed?: boolean;
   _undoStack?: Array<{ pdfBytes: Uint8Array; annotations: string }>;
   _undoIdx?: number;
+  _undoCleanIdx?: number | null;
 }
 
 // ── CloseContext ──────────────────────────────────────────────

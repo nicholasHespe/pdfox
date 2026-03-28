@@ -845,6 +845,8 @@ async function _loadTabContent(tab: Tab) {
     tab.annotator = new Annotator(tab.viewer.pages, tab.viewer);
     _patchAnnotatorForDirty(tab);
     _pushUndo(tab);
+    // Mark the initial loaded state as clean (only on first open, not after PDF ops or undo).
+    if (tab._undoCleanIdx === undefined) tab._undoCleanIdx = tab._undoIdx!;
     tab.outline = await tab.viewer.getOutline();
   } catch (err) {
     const name = tab.filePath ? tab.filePath.split(/[\\/]/).pop() : 'file';
@@ -941,9 +943,10 @@ async function saveTab(tab: Tab | null) {
     if (choice !== 0) return false;
     const res = await window.api.saveFile(tab.filePath, bytes.buffer as ArrayBuffer);
     if (res.ok) {
-      tab.pdfBytes     = bytes;
-      tab._savedBytes  = null;
-      tab.dirty        = false;
+      tab.pdfBytes       = bytes;
+      tab._savedBytes    = null;
+      tab._undoCleanIdx  = tab._undoIdx ?? null;
+      tab.dirty          = false;
       renderTabBar();
       return true;
     } else if (res.error && res.error !== 'cancelled') {
@@ -963,6 +966,7 @@ async function saveTab(tab: Tab | null) {
     tab._suggestedName = null;
     tab.pdfBytes       = bytes;
     tab._savedBytes    = null;
+    tab._undoCleanIdx  = tab._undoIdx ?? null;
     tab.dirty          = false;
     renderTabBar();
     updateTitleBar(tab);
@@ -995,6 +999,7 @@ async function saveTabCopy(tab: Tab | null) {
     tab._suggestedDir  = null;
     tab._suggestedName = null;
     tab.pdfBytes       = bytes;
+    tab._undoCleanIdx  = tab._undoIdx ?? null;
     tab.dirty          = false;
     renderTabBar();
     updateTitleBar(tab);
@@ -1122,10 +1127,31 @@ function _pushUndo(tab: Tab): void {
   if (_undoing) return;
   const annotations = tab.annotator ? JSON.stringify(tab.annotator.annotations) : '[]';
   if (!tab._undoStack) { tab._undoStack = []; tab._undoIdx = -1; }
-  tab._undoStack.splice(tab._undoIdx! + 1);
+  // Truncate forward history. If the clean state is in the discarded future, mark it unreachable.
+  const nextIdx = tab._undoIdx! + 1;
+  if (tab._undoStack.length > nextIdx) {
+    if (tab._undoCleanIdx != null && tab._undoCleanIdx > tab._undoIdx!) tab._undoCleanIdx = null;
+    tab._undoStack.splice(nextIdx);
+  }
   tab._undoStack.push({ pdfBytes: tab.pdfBytes, annotations });
-  if (tab._undoStack.length > UNDO_LIMIT) tab._undoStack.shift();
+  // Enforce limit. If the oldest entry is dropped, shift the clean index down with it.
+  if (tab._undoStack.length > UNDO_LIMIT) {
+    tab._undoStack.shift();
+    if (tab._undoCleanIdx != null) {
+      tab._undoCleanIdx--;
+      if (tab._undoCleanIdx < 0) tab._undoCleanIdx = null; // clean entry was dropped
+    }
+  }
   tab._undoIdx = tab._undoStack.length - 1;
+}
+
+function _syncDirtyToUndo(tab: Tab): void {
+  if (tab._undoCleanIdx != null && tab._undoIdx === tab._undoCleanIdx) {
+    tab.dirty = false;
+    renderTabBar();
+  } else {
+    markDirty(tab);
+  }
 }
 
 async function _applyUndo(tab: Tab, entry: { pdfBytes: Uint8Array; annotations: string }): Promise<void> {
@@ -1149,7 +1175,7 @@ async function _applyUndo(tab: Tab, entry: { pdfBytes: Uint8Array; annotations: 
   } else {
     tab.annotator?.setAnnotations(entry.annotations);
   }
-  markDirty(tab);
+  _syncDirtyToUndo(tab);
 }
 
 // ── Zoom ───────────────────────────────────────────────────────
