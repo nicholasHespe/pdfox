@@ -131,7 +131,7 @@ details[open] summary { margin-bottom: 8px; }
 
 /* ── Print output ─────────────────────────────────────────────── */
 @media print {
-  @page { margin: 0; size: auto; }
+  @page { margin: 0; }
   #settings-panel { display: none !important; }
   #preview-toolbar { display: none !important; }
   body { display: block; overflow: visible; }
