@@ -131,19 +131,20 @@ details[open] summary { margin-bottom: 8px; }
 
 /* ── Print output ─────────────────────────────────────────────── */
 @media print {
-  @page { margin: 0; size: auto; }
+  @page { margin: 0; }
   #settings-panel { display: none !important; }
   #preview-toolbar { display: none !important; }
   body { display: block; overflow: visible; }
   #preview-wrapper { display: block; overflow: visible; }
   #preview-area { padding: 0; gap: 0; background: white; overflow: visible; display: block; zoom: normal; }
-  /* Each page wrapper fills exactly one sheet of paper */
+  /* Each page wrapper fills exactly one sheet of paper.
+     !important is required to beat the inline style.width/height set by JS. */
   .print-page {
     box-shadow: none;
     page-break-after: always;
     break-after: page;
-    width: 100vw;
-    height: 100vh;
+    width: 100vw !important;
+    height: 100vh !important;
     overflow: hidden;
     display: flex;
     align-items: center;

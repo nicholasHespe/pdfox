@@ -338,6 +338,17 @@ btnPrint.addEventListener('click', async () => {
     if (!ok) return;
   }
 
+  // Set @page orientation so 100vw/100vh resolve to the correct paper dimensions.
+  // Without this, Chromium uses the default portrait @page size and Electron's
+  // landscape:true just rotates the output, causing landscape pages to print at ~71%.
+  let pageStyle = document.getElementById('reamlet-page-orientation') as HTMLStyleElement | null;
+  if (!pageStyle) {
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'reamlet-page-orientation';
+    document.head.appendChild(pageStyle);
+  }
+  pageStyle.textContent = `@page { size: ${landscape ? 'landscape' : 'portrait'}; margin: 0; }`;
+
   btnPrint.disabled = true;
   statusEl.textContent = 'Printing…';
   try {
@@ -411,6 +422,12 @@ window.api.onPdfData(async ({ buffer }) => {
   } else {
     statusEl.textContent = `${totalPages} page${totalPages === 1 ? '' : 's'}`;
   }
+  // Default to landscape orientation if the first page is wider than tall
+  if (pageData.length > 0 && pageData[0].naturalW > pageData[0].naturalH) {
+    printOrientation = 'landscape';
+    (document.querySelector('input[name="orientation"][value="landscape"]') as HTMLInputElement).checked = true;
+  }
   fitToWidth();
   renderPreview();
+  btnPrint.focus();
 });

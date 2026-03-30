@@ -1094,7 +1094,14 @@ async function printTab(tab: Tab | null) {
     await saveTab(tab);
     if (tab.dirty) return; // save was cancelled or failed
   }
-  await window.api.openPrintPreview(tab.filePath);
+  try {
+    const result = await window.api.openPrintPreview(tab.filePath);
+    if (!result.ok) {
+      await showDialog({ title: 'Print Error', message: result.error ?? 'Could not open print preview.', buttons: ['OK'], defaultId: 0, cancelId: 0 });
+    }
+  } catch (err) {
+    await showDialog({ title: 'Print Error', message: (err as Error).message ?? 'Could not open print preview.', buttons: ['OK'], defaultId: 0, cancelId: 0 });
+  }
 }
 
 async function reopenLastTab() {
@@ -1314,12 +1321,12 @@ async function _applyZoomNow(scale: number) {
 
 async function fitWidth() {
   if (!activeTab) return;
-  const v  = activeTab.viewer;
-  const vp = await v.getViewport(1);
-  const tocW       = tocPanel.classList.contains('hidden') ? 0 : tocPanel.offsetWidth;
-  const sbRight    = tocW + SCROLLBAR_GAP + 10; // scrollbar sits left of toc (10px wide) with gap
-  const availableW = activeTab.pane.clientWidth - 2 * Math.max(sidebar.offsetWidth, sbRight);
-  await _applyZoomNow(Math.round(((availableW - 32) / (vp.width / v.scale)) * 100) / 100);
+  const v    = activeTab.viewer;
+  const vp   = await v.getViewport(1);
+  const tocW = tocPanel.classList.contains('hidden') ? 0 : tocPanel.offsetWidth;
+  const gap  = Math.round(screen.width * 0.01);
+  const availableW = activeTab.pane.clientWidth - sidebar.offsetWidth - tocW - 2 * gap;
+  await _applyZoomNow(Math.round((availableW / (vp.width / v.scale)) * 100) / 100);
 }
 
 async function fitHeight() {

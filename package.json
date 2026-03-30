@@ -1,9 +1,10 @@
 {
   "name": "reamlet",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Lightweight standalone PDF viewer for Windows",
   "main": "out/main.js",
   "packageManager": "pnpm@10.32.1",
+  "author": "Nick Hespe",
   "scripts": {
     "clean": "node -e \"['out','dist','native-host/dist'].forEach(d => require('fs').rmSync(d, { recursive: true, force: true }))\"",
     "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
@@ -98,7 +99,7 @@
     },
     "files": [
       "out/**/*",
-      "renderer/index.html",
+      "renderer/**/*",
       "assets/**/*",
       "node_modules/**/*"
     ]
