@@ -6,12 +6,11 @@
 import type { BrowserWindow as BW, NativeImage, IpcMainInvokeEvent, IpcMainEvent, Event as ElectronEvent } from 'electron';
 
 const { app, BrowserWindow, ipcMain, dialog, Menu, nativeImage, shell } = require('electron');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const path  = require('path');
 const fs    = require('fs');
 const os    = require('os');
 const https = require('https');
-const http  = require('http');
 
 // ── Window factory ─────────────────────────────────────────────
 
@@ -78,6 +77,8 @@ function buildMenu(): void {
         { label: 'Save',        accelerator: 'CmdOrCtrl+S',       click: () => fw()?.webContents.send('menu-save') },
         { label: 'Save Copy…',  accelerator: 'CmdOrCtrl+Shift+S', click: () => fw()?.webContents.send('menu-save-copy') },
         { type: 'separator' },
+        { label: 'Print…',          accelerator: 'CmdOrCtrl+P',           click: () => fw()?.webContents.send('menu-print') },
+        { type: 'separator' },
         { label: 'Close Tab',       accelerator: 'CmdOrCtrl+W',           click: () => fw()?.webContents.send('menu-close-tab') },
         { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T',  click: () => fw()?.webContents.send('menu-reopen-tab') },
         { type: 'separator' },
@@ -122,16 +123,8 @@ ipcMain.handle('open-file-dialog', async (event: IpcMainInvokeEvent) => {
   }));
 });
 
-ipcMain.handle('save-file', async (event: IpcMainInvokeEvent, filePath: string, arrayBuffer: ArrayBuffer) => {
+ipcMain.handle('save-file', async (_event: IpcMainInvokeEvent, filePath: string, arrayBuffer: ArrayBuffer) => {
   if (!filePath) return { ok: false, error: 'no file path' };
-  const win = BrowserWindow.fromWebContents(event.sender);
-  const { response } = await dialog.showMessageBox(win, {
-    type: 'question', buttons: ['Replace', 'Cancel'],
-    defaultId: 0, cancelId: 1,
-    title: 'Save', message: `Replace "${path.basename(filePath)}"?`,
-    detail: 'The existing file will be overwritten with your annotated version.',
-  });
-  if (response !== 0) return { ok: false, error: 'cancelled' };
   try {
     fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
     return { ok: true };
@@ -212,6 +205,7 @@ ipcMain.handle('notify-tab-transferred', (_event: IpcMainInvokeEvent, sourceWind
 });
 
 ipcMain.on('open-devtools', (event: IpcMainEvent) => {
+  if (app.isPackaged) return;
   BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
 });
 
@@ -219,9 +213,8 @@ ipcMain.on('open-devtools', (event: IpcMainEvent) => {
 // into Windows Explorer, email clients, etc.
 ipcMain.handle('copy-file-to-clipboard', (_event: IpcMainInvokeEvent, filePath: string) => {
   const escaped = filePath.replace(/'/g, "''");
-  const cmd = `powershell -command "Set-Clipboard -Path '${escaped}'"`;
   return new Promise<{ ok: boolean; error?: string }>((resolve) => {
-    exec(cmd, (error: Error | null) => {
+    execFile('powershell', ['-command', `Set-Clipboard -Path '${escaped}'`], (error: Error | null) => {
       if (error) resolve({ ok: false, error: error.message });
       else resolve({ ok: true });
     });
@@ -232,6 +225,82 @@ ipcMain.handle('copy-file-to-clipboard', (_event: IpcMainInvokeEvent, filePath: 
 ipcMain.handle('reveal-in-explorer', (_event: IpcMainInvokeEvent, filePath: string) => {
   shell.showItemInFolder(filePath);
   return { ok: true };
+});
+
+// Return the list of system printers from the print preview window's web contents
+ipcMain.handle('get-printers', async (event: IpcMainInvokeEvent) => {
+  return event.sender.getPrintersAsync();
+});
+
+// Open the Windows printer preferences dialog for the given printer
+ipcMain.handle('open-printer-preferences', async (event: IpcMainInvokeEvent, printerName: string) => {
+  const printers = await event.sender.getPrintersAsync();
+  const valid = printers.some((p: { name: string }) => p.name === printerName);
+  if (!valid) return { ok: false, error: 'Unknown printer.' };
+  return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    execFile('rundll32', ['printui.dll,PrintUIEntry', '/e', '/n', printerName], (error: Error | null) => {
+      if (error) resolve({ ok: false, error: error.message });
+      else resolve({ ok: true });
+    });
+  });
+});
+
+// Open a visible print preview window where the user can configure and execute printing.
+ipcMain.handle('open-print-preview', async (_event: IpcMainInvokeEvent, filePath: string): Promise<{ ok: boolean; error?: string }> => {
+  if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: 'File not found.' };
+
+  const previewWin: BW = new BrowserWindow({
+    width: 960,
+    height: 700,
+    minWidth: 600,
+    minHeight: 400,
+    title: 'Print',
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+
+  await previewWin.loadFile(path.join(__dirname, '..', 'renderer', 'print-preview.html'));
+  previewWin.show();
+
+  const buffer = fs.readFileSync(filePath);
+  previewWin.webContents.send('pdf-data', { buffer: buffer.buffer });
+
+  return { ok: true };
+});
+
+// Execute a silent print (no system dialog) from the preview window's renderer process.
+ipcMain.handle('execute-print', (_event: IpcMainInvokeEvent, options: {
+  deviceName:  string;
+  copies:      number;
+  color:       boolean;
+  collate:     boolean;
+  duplexMode:  'simplex' | 'longEdge' | 'shortEdge';
+  scaleFactor: number;
+  landscape:   boolean;
+}): Promise<{ ok: boolean; error?: string }> => {
+  const win = BrowserWindow.fromWebContents(_event.sender);
+  if (!win) return Promise.resolve({ ok: false, error: 'No window.' });
+
+  return new Promise(resolve => {
+    win.webContents.print(
+      {
+        silent:      true,
+        deviceName:  options.deviceName,
+        copies:      options.copies,
+        color:       options.color,
+        collate:     options.collate,
+        duplexMode:  options.duplexMode,
+        scaleFactor: options.scaleFactor,
+        landscape:   options.landscape,
+      },
+      (success: boolean, errorType: string) =>
+        resolve(success ? { ok: true } : { ok: false, error: errorType })
+    );
+  });
 });
 
 // Read / write the extension ID in the native messaging host manifest.
@@ -337,16 +406,16 @@ _cleanupTempDownloads();
 setInterval(_cleanupTempDownloads, 60 * 60 * 1000);
 
 // Download a remote PDF to %TEMP%\ReamletDownloads and return the local path.
-// Follows up to 5 redirects. Rejects on HTTP errors or network failures.
+// Only follows HTTPS redirects (no HTTP downgrade). Rejects on HTTP errors or network failures.
 function downloadPdfToTemp(url: string, redirectsLeft = 5): Promise<string> {
   return new Promise((resolve, reject) => {
     if (redirectsLeft <= 0) { reject(new Error('Too many redirects')); return; }
+    if (!url.startsWith('https://')) { reject(new Error('Only HTTPS URLs are supported')); return; }
 
     const tempDir = path.join(os.tmpdir(), 'ReamletDownloads');
     try { fs.mkdirSync(tempDir, { recursive: true }); } catch { /* already exists */ }
 
-    const protocol = url.startsWith('https://') ? https : http;
-    const req = protocol.get(url, (res: NodeJS.ReadableStream & { statusCode: number; headers: Record<string, string> }) => {
+    const req = https.get(url, (res: NodeJS.ReadableStream & { statusCode: number; headers: Record<string, string> }) => {
       if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
         const location = res.headers['location'];
         if (location) {
@@ -359,17 +428,38 @@ function downloadPdfToTemp(url: string, redirectsLeft = 5): Promise<string> {
         return;
       }
 
-      let fileName: string;
+      let baseName: string;
       try {
         const base = path.basename(new URL(url).pathname) || 'download';
-        fileName = base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+        baseName = base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
       } catch {
-        fileName = 'download.pdf';
+        baseName = 'download.pdf';
       }
-      const filePath = path.join(tempDir, fileName);
+      // Prefix with a random token to prevent concurrent downloads of the same
+      // URL from racing to write the same temp file.
+      const token    = Math.random().toString(36).slice(2, 10);
+      const filePath = path.join(tempDir, `${token}-${baseName}`);
       const fileStream = fs.createWriteStream(filePath);
       res.pipe(fileStream);
-      fileStream.on('finish', () => { fileStream.close(); resolve(filePath); });
+      fileStream.on('finish', () => {
+        fileStream.close();
+        // Verify the file starts with the PDF magic bytes (%PDF-)
+        try {
+          const header = Buffer.alloc(5);
+          const fd = fs.openSync(filePath, 'r');
+          fs.readSync(fd, header, 0, 5, 0);
+          fs.closeSync(fd);
+          if (header.toString('ascii') !== '%PDF-') {
+            fs.unlinkSync(filePath);
+            reject(new Error('Downloaded file is not a valid PDF'));
+            return;
+          }
+        } catch (err) {
+          reject(err);
+          return;
+        }
+        resolve(filePath);
+      });
       fileStream.on('error', reject);
     });
     req.on('error', reject);

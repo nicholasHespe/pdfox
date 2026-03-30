@@ -3,14 +3,14 @@
 
 import { PDFViewer }        from './viewer.js';
 import { Annotator }        from './annotator.js';
-import { embedAnnotations } from './saver.js';
+import { embedAnnotations, embedFooter, embedWatermark } from './saver.js';
 // @ts-expect-error — pdf-lib is imported via direct path for Electron's file:// ESM loader
 import * as _pdfLib       from '../../node_modules/pdf-lib/dist/pdf-lib.esm.js';
 import type * as PDFLibNS from 'pdf-lib';
 import type { OutlineNode } from './types.js';
 const { PDFDocument } = _pdfLib as unknown as typeof PDFLibNS;
 import { FindBar }          from './find.js';
-import type { Tab, CloseContext } from './types.js';
+import type { Tab, CloseContext, Annotation } from './types.js';
 
 // ── State ──────────────────────────────────────────────────────
 
@@ -32,6 +32,8 @@ const _closedTabStack: { filePath: string }[] = [];
 // Zoom debounce state
 let _zoomTimer: ReturnType<typeof setTimeout> | null = null; // setTimeout handle for deferred re-render
 let _zoomTarget: number | null = null; // accumulated target scale while debounce is pending
+let _zoomCursor: { x: number; y: number } | null = null; // cursor pane-relative coords at zoom start
+let _zoomTabId:  number | null = null;  // ID of the tab that started the current zoom gesture
 
 // Custom scrollbar drag state
 let _sbDragging        = false;
@@ -87,6 +89,7 @@ const colorDot       = document.getElementById('color-dot')!;
 const colorPanel     = document.getElementById('color-panel')!;
 const titleFilename  = document.getElementById('title-filename')!;
 const contextMenu    = document.getElementById('context-menu')!;
+const inputCtxMenu   = document.getElementById('input-ctx-menu')!;
 const ctxCut         = document.querySelector('[data-ctx="cut"]')   as HTMLButtonElement;
 const ctxPaste       = document.querySelector('[data-ctx="paste"]') as HTMLButtonElement;
 const tabContextMenu = document.getElementById('tab-context-menu')!;
@@ -287,6 +290,7 @@ viewerHost.addEventListener('contextmenu', (e) => {
 document.addEventListener('mousedown', (e) => {
   if (!(e.target as Element)?.closest('#context-menu'))     _hideContextMenu();
   if (!(e.target as Element)?.closest('#tab-context-menu')) _hideTabContextMenu();
+  if (!(e.target as Element)?.closest('#input-ctx-menu'))   inputCtxMenu.classList.add('hidden');
 });
 
 contextMenu.addEventListener('mousedown', (e) => {
@@ -326,7 +330,7 @@ tabContextMenu.addEventListener('mousedown', (e) => {
     case 'close':        requestCloseTab(tab); break;
     case 'save':         saveTab(tab); break;
     case 'save-as':      saveTabCopy(tab); break;
-    case 'print':        switchTab(tab); window.print(); break;
+    case 'print':        switchTab(tab); printTab(tab); break;
     case 'copy-file':    window.api.copyFileToClipboard(tab.filePath!); break;
     case 'reveal':       window.api.revealInExplorer(tab.filePath!); break;
     case 'close-others':
@@ -841,6 +845,9 @@ async function _loadTabContent(tab: Tab) {
     await tab.viewer.load(tab.pdfBytes);
     tab.annotator = new Annotator(tab.viewer.pages, tab.viewer);
     _patchAnnotatorForDirty(tab);
+    _pushUndo(tab);
+    // Mark the initial loaded state as clean (only on first open, not after PDF ops or undo).
+    if (tab._undoCleanIdx === undefined) tab._undoCleanIdx = tab._undoIdx!;
     tab.outline = await tab.viewer.getOutline();
   } catch (err) {
     const name = tab.filePath ? tab.filePath.split(/[\\/]/).pop() : 'file';
@@ -924,13 +931,23 @@ async function saveTab(tab: Tab | null) {
 
   const bytes = await embedAnnotations(tab.pdfBytes, annotations, viewer);
 
-  // Real on-disk file: overwrite after confirmation.
+  // Real on-disk file: confirm overwrite, then save.
   if (tab.filePath && /[\\/]/.test(tab.filePath)) {
+    const name   = tab.filePath.replace(/.*[\\/]/, '');
+    const choice = await showDialog({
+      title:     'Save',
+      message:   `Replace "${name}"?`,
+      buttons:   ['Replace', 'Cancel'],
+      defaultId: 0,
+      cancelId:  1,
+    });
+    if (choice !== 0) return false;
     const res = await window.api.saveFile(tab.filePath, bytes.buffer as ArrayBuffer);
     if (res.ok) {
-      tab.pdfBytes     = bytes;
-      tab._savedBytes  = null;
-      tab.dirty        = false;
+      tab.pdfBytes       = bytes;
+      tab._savedBytes    = null;
+      tab._undoCleanIdx  = tab._undoIdx ?? null;
+      tab.dirty          = false;
       renderTabBar();
       return true;
     } else if (res.error && res.error !== 'cancelled') {
@@ -950,6 +967,7 @@ async function saveTab(tab: Tab | null) {
     tab._suggestedName = null;
     tab.pdfBytes       = bytes;
     tab._savedBytes    = null;
+    tab._undoCleanIdx  = tab._undoIdx ?? null;
     tab.dirty          = false;
     renderTabBar();
     updateTitleBar(tab);
@@ -982,12 +1000,101 @@ async function saveTabCopy(tab: Tab | null) {
     tab._suggestedDir  = null;
     tab._suggestedName = null;
     tab.pdfBytes       = bytes;
+    tab._undoCleanIdx  = tab._undoIdx ?? null;
     tab.dirty          = false;
     renderTabBar();
     updateTitleBar(tab);
     return true;
   }
   return false;
+}
+
+// ── Generic custom dialog ──────────────────────────────────────
+// Builds a modal matching the app's existing style and resolves with
+// the index of the button the user clicked (Escape resolves cancelId).
+function showDialog(options: {
+  title:     string;
+  message:   string;
+  buttons:   string[];
+  defaultId?: number;
+  cancelId?:  number;
+}): Promise<number> {
+  return new Promise(resolve => {
+    const cancelId  = options.cancelId  ?? options.buttons.length - 1;
+    const defaultId = options.defaultId ?? 0;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.style.minWidth = '340px';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'modal-title';
+    titleEl.textContent = options.title;
+    box.appendChild(titleEl);
+
+    const msgEl = document.createElement('p');
+    msgEl.className = 'modal-hint';
+    msgEl.textContent = options.message;
+    box.appendChild(msgEl);
+
+    const footer = document.createElement('div');
+    footer.className = 'modal-footer';
+
+    const controller = new AbortController();
+
+    const dismiss = (idx: number) => {
+      controller.abort(); // removes the keydown listener
+      overlay.remove();
+      resolve(idx);
+    };
+
+    // Also clean up if the overlay is removed from the DOM by any other means
+    // (e.g. another piece of code clearing the body or closing the panel).
+    const observer = new MutationObserver(() => {
+      if (!overlay.isConnected) { controller.abort(); observer.disconnect(); resolve(cancelId); }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    options.buttons.forEach((label, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'modal-btn' + (i === defaultId ? ' primary' : '');
+      btn.textContent = label;
+      btn.addEventListener('click', () => { observer.disconnect(); dismiss(i); });
+      footer.appendChild(btn);
+    });
+
+    box.appendChild(footer);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { observer.disconnect(); dismiss(cancelId); } };
+    document.addEventListener('keydown', onKey, { signal: controller.signal });
+  });
+}
+
+async function printTab(tab: Tab | null) {
+  if (!tab) return;
+  if (!tab.filePath) {
+    await showDialog({ title: 'Print', message: 'Save the document before printing.', buttons: ['OK'], defaultId: 0, cancelId: 0 });
+    return;
+  }
+  if (tab.dirty) {
+    const name   = tab.filePath.replace(/.*[\\/]/, '');
+    const choice = await showDialog({
+      title:     'Unsaved Changes',
+      message:   `"${name}" has unsaved annotations. Save now so they appear in the printed output.`,
+      buttons:   ['Save and Print', 'Cancel'],
+      defaultId: 0,
+      cancelId:  1,
+    });
+    if (choice !== 0) return;
+    await saveTab(tab);
+    if (tab.dirty) return; // save was cancelled or failed
+  }
+  await window.api.openPrintPreview(tab.filePath);
 }
 
 async function reopenLastTab() {
@@ -1018,13 +1125,96 @@ function _patchAnnotatorForDirty(tab: Tab) {
     },
   });
   tab.annotator!.annotations = proxy;
+  tab.annotator!.onCommit = () => _pushUndo(tab);
+}
+
+// ── Unified undo / redo ────────────────────────────────────────
+
+const UNDO_LIMIT = 20;
+// Maximum total bytes held by unique PDF snapshots across the undo stack.
+// Consecutive annotation-only entries share the same Uint8Array reference and
+// are counted only once, so annotation edits on large files remain cheap.
+const MAX_UNDO_BYTES = 200 * 1024 * 1024; // 200 MB
+const _undoing = new Set<number>(); // tab IDs currently in flight for undo/redo
+
+function _undoStackBytes(stack: Array<{ pdfBytes: Uint8Array; annotations: string }>): number {
+  const seen = new Set<Uint8Array>();
+  let total = 0;
+  for (const entry of stack) {
+    if (!seen.has(entry.pdfBytes)) {
+      seen.add(entry.pdfBytes);
+      total += entry.pdfBytes.byteLength;
+    }
+  }
+  return total;
+}
+
+function _shiftOldestUndo(tab: Tab): void {
+  tab._undoStack!.shift();
+  if (tab._undoCleanIdx != null) {
+    tab._undoCleanIdx--;
+    if (tab._undoCleanIdx < 0) tab._undoCleanIdx = null; // clean entry was dropped
+  }
+}
+
+function _pushUndo(tab: Tab): void {
+  if (_undoing.has(tab.id)) return;
+  const annotations = tab.annotator ? JSON.stringify(tab.annotator.annotations) : '[]';
+  if (!tab._undoStack) { tab._undoStack = []; tab._undoIdx = -1; }
+  // Truncate forward history. If the clean state is in the discarded future, mark it unreachable.
+  const nextIdx = tab._undoIdx! + 1;
+  if (tab._undoStack.length > nextIdx) {
+    if (tab._undoCleanIdx != null && tab._undoCleanIdx > tab._undoIdx!) tab._undoCleanIdx = null;
+    tab._undoStack.splice(nextIdx);
+  }
+  tab._undoStack.push({ pdfBytes: tab.pdfBytes, annotations });
+  // Enforce count limit.
+  if (tab._undoStack.length > UNDO_LIMIT) _shiftOldestUndo(tab);
+  // Enforce byte budget: drop oldest entries (never below 1) until under budget.
+  while (tab._undoStack.length > 1 && _undoStackBytes(tab._undoStack) > MAX_UNDO_BYTES) {
+    _shiftOldestUndo(tab);
+  }
+  tab._undoIdx = tab._undoStack.length - 1;
+}
+
+function _syncDirtyToUndo(tab: Tab): void {
+  if (tab._undoCleanIdx != null && tab._undoIdx === tab._undoCleanIdx) {
+    tab.dirty = false;
+    renderTabBar();
+  } else {
+    markDirty(tab);
+  }
+}
+
+async function _applyUndo(tab: Tab, entry: { pdfBytes: Uint8Array; annotations: string }): Promise<void> {
+  const prevBytes = tab.pdfBytes;
+  tab.pdfBytes = entry.pdfBytes;
+  if (entry.pdfBytes !== prevBytes) {
+    const scrollTop = tab.pane.scrollTop;
+    const reloadEl = document.createElement('div');
+    reloadEl.className = 'loading-overlay';
+    reloadEl.innerHTML = '<div class="spinner"></div>';
+    tab.pane.appendChild(reloadEl);
+    tab.loadingEl = reloadEl;
+    finder.invalidateTab(tab);
+    await _loadTabContent(tab);
+    const data = JSON.parse(entry.annotations) as Annotation[];
+    if (data.length > 0) {
+      tab.annotator!.annotations.splice(0, tab.annotator!.annotations.length, ...data);
+      tab.annotator!.redrawAll();
+    }
+    requestAnimationFrame(() => { tab.pane.scrollTop = scrollTop; });
+  } else {
+    tab.annotator?.setAnnotations(entry.annotations);
+  }
+  _syncDirtyToUndo(tab);
 }
 
 // ── Zoom ───────────────────────────────────────────────────────
 
 // Immediately apply a CSS scale transform to the page container for visual
 // feedback, then re-render at the true scale after a 250 ms debounce.
-function zoom(delta: number) {
+function zoom(delta: number, cursorX?: number, cursorY?: number) {
   if (!activeTab) return;
   const v        = activeTab.viewer;
   const newScale = Math.max(0.25, Math.min(5,
@@ -1035,8 +1225,28 @@ function zoom(delta: number) {
   const pagesEl = activeTab.pane.querySelector('.pdf-pages') as HTMLElement | null;
   if (pagesEl) {
     const ratio = newScale / v.scale;
-    pagesEl.style.transformOrigin = 'top center';
-    pagesEl.style.transform       = `scale(${ratio})`;
+
+    // Capture cursor position once per gesture (don't overwrite if debounce is already running)
+    if (cursorX !== undefined && cursorY !== undefined && _zoomCursor === null) {
+      const pane     = activeTab.pane;
+      const paneRect = pane.getBoundingClientRect();
+      _zoomCursor = {
+        x: Math.max(0, Math.min(pane.clientWidth,  cursorX - paneRect.left)),
+        y: Math.max(0, Math.min(pane.clientHeight, cursorY - paneRect.top)),
+      };
+      _zoomTabId = activeTab.id;
+    }
+
+    if (_zoomCursor !== null) {
+      const pane    = activeTab.pane;
+      const originX = pane.scrollLeft + _zoomCursor.x - pagesEl.offsetLeft;
+      const originY = pane.scrollTop  + _zoomCursor.y - pagesEl.offsetTop;
+      pagesEl.style.transformOrigin = `${originX}px ${originY}px`;
+    } else {
+      pagesEl.style.transformOrigin = 'top center';
+    }
+
+    pagesEl.style.transform = `scale(${ratio})`;
   }
 
   // Debounce: wait until the user stops zooming, then do the real re-render
@@ -1057,13 +1267,45 @@ async function _applyZoomNow(scale: number) {
   _zoomTimer  = null;
   _zoomTarget = null;
 
+  const v        = activeTab.viewer;
+  const pane     = activeTab.pane;
+  const oldScale = v.scale;
+  // Discard stale cursor if the user switched tabs during the debounce.
+  const cursor   = (activeTab.id === _zoomTabId) ? _zoomCursor : null;
+  _zoomCursor    = null;
+  _zoomTabId     = null;
+
+  // Capture scroll snapshot before the CSS transform is removed so the
+  // pre-scroll and final-scroll calculations both use the committed position.
+  const prevScrollLeft = pane.scrollLeft;
+  const prevScrollTop  = pane.scrollTop;
+
   const pagesEl = activeTab.pane.querySelector('.pdf-pages') as HTMLElement | null;
   if (pagesEl) pagesEl.style.transform = '';
 
-  const v = activeTab.viewer;
+  // Pre-scroll synchronously (before any await) so _getVisibleSet() inside
+  // setZoom renders the pages near the cursor first.
+  // Zoom-out: new scroll is smaller and always in bounds.
+  // Zoom-in: new scroll may exceed current max and is browser-clamped to the
+  //   bottom of the old layout, which is still far better than staying at 0.
+  if (cursor !== null) {
+    const ratio = scale / oldScale;
+    pane.scrollLeft = Math.max(0, (prevScrollLeft + cursor.x) * ratio - cursor.x);
+    pane.scrollTop  = Math.max(0, (prevScrollTop  + cursor.y) * ratio - cursor.y);
+  }
+
   await v.setZoom(scale);
+
+  // Final exact correction now that content is properly sized.
+  if (cursor !== null) {
+    const ratio = scale / oldScale;
+    pane.scrollLeft = Math.max(0, (prevScrollLeft + cursor.x) * ratio - cursor.x);
+    pane.scrollTop  = Math.max(0, (prevScrollTop  + cursor.y) * ratio - cursor.y);
+  }
+
   activeTab.annotator!.pages = v.pages;
   activeTab.annotator!.redrawAll();
+  activeTab.annotator!.setTool(activeTab.annotator!.tool);
   _syncScrollbar();
   _updateHorizontalPadding();
   _syncScrollbarH();
@@ -1092,10 +1334,13 @@ async function fitHeight() {
 async function rotate(singlePage: boolean) {
   if (!activeTab) return;
   const v = activeTab.viewer;
+  const targetPage = singlePage ? v.getVisiblePageNum() : null;
   if (singlePage) await v.rotatePage(v.getVisiblePageNum(), 90);
   else            await v.rotateAll(90);
+  activeTab.annotator!.rotateAnnotations(targetPage, 90);
   activeTab.annotator!.pages = v.pages;
   activeTab.annotator!.redrawAll();
+  activeTab.annotator!.setTool(activeTab.annotator!.tool);
   markDirty(activeTab);
 }
 
@@ -1252,12 +1497,29 @@ document.querySelectorAll('.swatch').forEach(s => {
   });
 });
 
-document.getElementById('btn-undo')!.addEventListener('click',   () => activeTab?.annotator?.undo());
-document.getElementById('btn-redo')!.addEventListener('click',   () => activeTab?.annotator?.redo());
+document.getElementById('btn-undo')!.addEventListener('click', async () => {
+  const tab = activeTab;
+  if (!tab || _undoing.has(tab.id)) return;
+  if (!tab._undoStack || (tab._undoIdx ?? -1) <= 0) return;
+  const idx = tab._undoIdx!;
+  tab._undoIdx = idx - 1;
+  _undoing.add(tab.id);
+  try { await _applyUndo(tab, tab._undoStack[idx - 1]); } finally { _undoing.delete(tab.id); }
+});
+document.getElementById('btn-redo')!.addEventListener('click', async () => {
+  const tab = activeTab;
+  if (!tab || _undoing.has(tab.id)) return;
+  if (!tab._undoStack) return;
+  const idx = tab._undoIdx ?? -1;
+  if (idx >= tab._undoStack.length - 1) return;
+  tab._undoIdx = idx + 1;
+  _undoing.add(tab.id);
+  try { await _applyUndo(tab, tab._undoStack[idx + 1]); } finally { _undoing.delete(tab.id); }
+});
 document.getElementById('btn-fit')!.addEventListener('click',    fitWidth);
 document.getElementById('btn-fit-h')!.addEventListener('click',  fitHeight);
 document.getElementById('btn-rotate')!.addEventListener('click', (e) => rotate(e.shiftKey));
-document.getElementById('btn-print')!.addEventListener('click',  () => window.print());
+document.getElementById('btn-print')!.addEventListener('click',  () => printTab(activeTab));
 
 btnBold.addEventListener('click', () => {
   if (!activeTab?.annotator) return;
@@ -1294,7 +1556,7 @@ pageInput.addEventListener('change', () => jumpToPage(Number(pageInput.value)));
 viewerHost.addEventListener('wheel', (e) => {
   if (!e.ctrlKey) return;
   e.preventDefault();
-  zoom(e.deltaY < 0 ? 0.1 : -0.1);
+  zoom(e.deltaY < 0 ? 0.1 : -0.1, e.clientX, e.clientY);
 }, { passive: false });
 
 // ── Keyboard shortcuts ─────────────────────────────────────────
@@ -1309,8 +1571,31 @@ document.addEventListener('keydown', async (e) => {
   if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoom(0.1); return; }
   if (ctrl && e.key === '-') { e.preventDefault(); zoom(-0.1); return; }
   if (ctrl && e.key === '0') { e.preventDefault(); fitWidth(); return; }
-  if (ctrl && e.key === 'z') { e.preventDefault(); activeTab?.annotator?.undo(); return; }
-  if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); activeTab?.annotator?.redo(); return; }
+  if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
+  if (ctrl && e.key === 'z') {
+    e.preventDefault();
+    const tab = activeTab;
+    if (!tab || _undoing.has(tab.id)) return;
+    if (!tab._undoStack || (tab._undoIdx ?? -1) <= 0) return;
+    const idx = tab._undoIdx!;
+    tab._undoIdx = idx - 1;
+    _undoing.add(tab.id);
+    try { await _applyUndo(tab, tab._undoStack[idx - 1]); } finally { _undoing.delete(tab.id); }
+    return;
+  }
+  if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
+    e.preventDefault();
+    const tab = activeTab;
+    if (!tab || _undoing.has(tab.id)) return;
+    if (!tab._undoStack) return;
+    const idx = tab._undoIdx ?? -1;
+    if (idx >= tab._undoStack.length - 1) return;
+    tab._undoIdx = idx + 1;
+    _undoing.add(tab.id);
+    try { await _applyUndo(tab, tab._undoStack[idx + 1]); } finally { _undoing.delete(tab.id); }
+    return;
+  }
   if (ctrl && e.key === 'x') { e.preventDefault(); activeTab?.annotator?.cut(); return; }
   if (ctrl && e.key === 'v') { e.preventDefault(); activeTab?.annotator?.paste(); return; }
   if (ctrl && e.key === 'c') {
@@ -1319,7 +1604,7 @@ document.addEventListener('keydown', async (e) => {
       e.preventDefault(); ann.copy(); return;
     }
   }
-  if (ctrl && e.key === 'p') { e.preventDefault(); window.print(); return; }
+  if (ctrl && e.key === 'p') { e.preventDefault(); printTab(activeTab); return; }
   if (ctrl && e.key === 'r') { e.preventDefault(); if (activeTab) _applyZoomNow(activeTab.viewer.scale); return; }
   if (ctrl && e.key === 'f') { e.preventDefault(); finder.open(); return; }
 
@@ -1346,6 +1631,7 @@ const _menuActions = {
   'open':        () => openFile(),
   'save':        () => saveTab(activeTab),
   'save-copy':   () => saveTabCopy(activeTab),
+  'print':       () => printTab(activeTab),
   'close-tab':   () => { if (activeTab) requestCloseTab(activeTab); },
   'reopen-tab':  () => reopenLastTab(),
   'quit':        () => window.close(),
@@ -1402,6 +1688,7 @@ window.api.onMenuEvent((event) => {
     case 'menu-open':         openFile(); break;
     case 'menu-save':         saveTab(activeTab); break;
     case 'menu-save-copy':    saveTabCopy(activeTab); break;
+    case 'menu-print':        printTab(activeTab); break;
     case 'menu-close-tab':    if (activeTab) requestCloseTab(activeTab); break;
     case 'menu-reopen-tab':   reopenLastTab(); break;
     case 'menu-extension-id': _openExtensionIdModal(); break;
@@ -1435,6 +1722,41 @@ document.getElementById('ext-id-save')!.addEventListener('click', async () => {
     document.getElementById('ext-id-modal')!.classList.add('hidden');
   } else {
     alert('Failed to save: ' + result.error);
+  }
+});
+
+document.getElementById('ext-id-input')!.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  inputCtxMenu.classList.remove('hidden');
+  const menuW = inputCtxMenu.offsetWidth  || 120;
+  const menuH = inputCtxMenu.offsetHeight || 80;
+  inputCtxMenu.style.left = `${Math.max(0, Math.min(e.clientX, window.innerWidth  - menuW - 4))}px`;
+  inputCtxMenu.style.top  = `${Math.max(0, Math.min(e.clientY, window.innerHeight - menuH - 4))}px`;
+});
+
+inputCtxMenu.addEventListener('mousedown', (e) => {
+  const btn = (e.target as Element)?.closest('[data-input-ctx]') as HTMLElement | null;
+  if (!btn) return;
+  e.preventDefault();
+  inputCtxMenu.classList.add('hidden');
+  const input = document.getElementById('ext-id-input') as HTMLInputElement;
+  input.focus();
+  const start = input.selectionStart ?? 0;
+  const end   = input.selectionEnd   ?? 0;
+  switch (btn.dataset.inputCtx) {
+    case 'cut':
+      navigator.clipboard.writeText(input.value.substring(start, end));
+      input.setRangeText('', start, end, 'end');
+      break;
+    case 'copy':
+      navigator.clipboard.writeText(input.value.substring(start, end));
+      break;
+    case 'paste':
+      navigator.clipboard.readText().then(text => {
+        input.setRangeText(text, input.selectionStart ?? 0, input.selectionEnd ?? 0, 'end');
+      }).catch(() => { /* clipboard access denied — nothing to paste */ });
+      break;
   }
 });
 
@@ -1507,13 +1829,12 @@ async function _executeCombine() {
       const name    = tab.filePath ? tab.filePath.replace(/.*[\\/]/, '') : 'Untitled';
       const hasPath = tab.filePath && /[\\/]/.test(tab.filePath);
       const buttons = ['Discard changes', ...(hasPath ? ['Save'] : []), 'Save As\u2026', 'Cancel'];
-      const choice  = await window.api.showMessageBox({
-        type:      'question',
+      const saveIdx = buttons.includes('Save') ? buttons.indexOf('Save') : buttons.indexOf('Save As\u2026');
+      const choice  = await showDialog({
         title:     'Unsaved Changes',
-        message:   `\u201c${name}\u201d has unsaved annotations.`,
-        detail:    'Choose how to handle them before combining.',
+        message:   `\u201c${name}\u201d has unsaved annotations. Choose how to handle them before combining.`,
         buttons,
-        defaultId: 0,
+        defaultId: saveIdx,
         cancelId:  buttons.indexOf('Cancel'),
       });
       const action = buttons[choice];
@@ -1617,7 +1938,11 @@ async function _openReorderModal() {
     btnR.className = 'reorder-arrow';
     btnR.title     = 'Move right';
     btnR.innerHTML = '&#8594;';
-    controls.append(btnL, btnR);
+    const btnDel = document.createElement('button');
+    btnDel.className = 'reorder-arrow reorder-remove';
+    btnDel.title     = 'Remove page';
+    btnDel.innerHTML = '&#x2715;';
+    controls.append(btnL, btnR, btnDel);
 
     thumb.append(img, num, controls);
 
@@ -1629,6 +1954,13 @@ async function _openReorderModal() {
 
     btnL.addEventListener('click', (e) => { e.stopPropagation(); selectThumb(thumb); moveThumb(thumb, -1); });
     btnR.addEventListener('click', (e) => { e.stopPropagation(); selectThumb(thumb); moveThumb(thumb,  1); });
+    btnDel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      thumb.remove();
+      container.querySelectorAll('.reorder-page-num').forEach((s, i) => {
+        s.textContent = `Page ${i + 1}`;
+      });
+    });
 
     thumb.addEventListener('dragstart', (e) => {
       e.dataTransfer!.setData('reorder-orig', String(thumb.dataset.orig));
@@ -1670,11 +2002,14 @@ async function _executeReorder() {
   if (!activeTab) return;
   document.getElementById('reorder-modal')!.classList.add('hidden');
 
+  const tab       = activeTab;
   const container = document.getElementById('reorder-pages')!;
   const newOrder  = [...container.querySelectorAll('.reorder-thumb')].map(el => Number((el as HTMLElement).dataset.orig));
-  if (newOrder.every((v, i) => v === i)) return; // unchanged
-
-  const tab = activeTab;
+  if (newOrder.length === 0) {
+    await showDialog({ title: 'Remove Pages', message: 'Cannot remove all pages.', buttons: ['OK'], defaultId: 0, cancelId: 0 });
+    return;
+  }
+  if (newOrder.length === tab.viewer.pageCount && newOrder.every((v, i) => v === i)) return; // unchanged
   const srcDoc    = await PDFDocument.load(tab.pdfBytes, { ignoreEncryption: true });
   const resultDoc = await PDFDocument.create();
   const pages     = await resultDoc.copyPages(srcDoc, newOrder);
@@ -1684,6 +2019,218 @@ async function _executeReorder() {
   tab.pdfBytes = bytes;
   tab.annotator!.clear();
   // Re-add loading overlay for the re-render
+  const reloadEl = document.createElement('div');
+  reloadEl.className = 'loading-overlay';
+  reloadEl.innerHTML = '<div class="spinner"></div>';
+  tab.pane.appendChild(reloadEl);
+  tab.loadingEl = reloadEl;
+  finder.invalidateTab(tab);
+  await _loadTabContent(tab);
+  markDirty(tab);
+}
+
+// ── Add Footer ─────────────────────────────────────────────────
+
+function _resolveFooterColForPreview(col: 'left' | 'center' | 'right'): string {
+  const sel    = document.getElementById(`footer-${col}-sel`)    as HTMLSelectElement;
+  const custom = document.getElementById(`footer-${col}-custom`) as HTMLInputElement;
+  const total  = activeTab?.viewer.pageCount ?? 10;
+  switch (sel.value) {
+    case 'date':       return new Date().toLocaleDateString();
+    case 'page':       return '1';
+    case 'page-total': return `1 / ${total}`;
+    case 'custom':     return custom.value;
+    default:           return '';
+  }
+}
+
+function _resolveFooterColForEmbed(col: 'left' | 'center' | 'right'): string {
+  const sel    = document.getElementById(`footer-${col}-sel`)    as HTMLSelectElement;
+  const custom = document.getElementById(`footer-${col}-custom`) as HTMLInputElement;
+  switch (sel.value) {
+    case 'date':       return new Date().toLocaleDateString();
+    case 'page':       return '{page}';
+    case 'page-total': return '{page} / {total}';
+    case 'custom':     return custom.value;
+    default:           return '';
+  }
+}
+
+function _drawFooterPreview() {
+  const canvas = document.getElementById('footer-preview') as HTMLCanvasElement;
+  const ctx    = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#1e1e1e';
+  ctx.fillRect(0, 0, W, H);
+
+  // Page outline
+  const mx = 16, my = 10, pw = W - mx * 2, ph = H - my * 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(mx, my, pw, ph);
+
+  // Simulated content lines
+  ctx.strokeStyle = '#e0e0e0';
+  ctx.lineWidth = 1;
+  for (let y = my + 10; y < my + ph - 34; y += 10) {
+    const lw = y < my + ph - 54 ? pw - 24 : (pw - 24) * 0.55;
+    ctx.beginPath(); ctx.moveTo(mx + 12, y); ctx.lineTo(mx + 12 + lw, y); ctx.stroke();
+  }
+
+  // Footer separator
+  const sepY = my + ph - 28;
+  ctx.strokeStyle = '#c0c0c0';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(mx + 8, sepY); ctx.lineTo(mx + pw - 8, sepY); ctx.stroke();
+
+  // Footer text
+  const pdfFontSize  = parseFloat((document.getElementById('footer-fontsize') as HTMLInputElement).value) || 10;
+  const canvasFontSize = pdfFontSize * pw / 612; // proportional to letter page width (612pt)
+  ctx.font      = `${canvasFontSize}px Helvetica, Arial, sans-serif`;
+  ctx.fillStyle = '#222222';
+  const textY = sepY + 17;
+
+  const lText = _resolveFooterColForPreview('left');
+  const cText = _resolveFooterColForPreview('center');
+  const rText = _resolveFooterColForPreview('right');
+
+  if (lText) { ctx.textAlign = 'left';   ctx.fillText(lText, mx + 10,      textY); }
+  if (cText) { ctx.textAlign = 'center'; ctx.fillText(cText, mx + pw / 2,  textY); }
+  if (rText) { ctx.textAlign = 'right';  ctx.fillText(rText, mx + pw - 10, textY); }
+  ctx.textAlign = 'left';
+}
+
+function _setupFooterColSelect(col: 'left' | 'center' | 'right') {
+  const sel    = document.getElementById(`footer-${col}-sel`)    as HTMLSelectElement;
+  const custom = document.getElementById(`footer-${col}-custom`) as HTMLInputElement;
+  sel.addEventListener('change', () => {
+    custom.classList.toggle('footer-custom-hidden', sel.value !== 'custom');
+    _drawFooterPreview();
+  });
+  custom.addEventListener('input', _drawFooterPreview);
+}
+
+_setupFooterColSelect('left');
+_setupFooterColSelect('center');
+_setupFooterColSelect('right');
+(document.getElementById('footer-fontsize') as HTMLInputElement).addEventListener('input', _drawFooterPreview);
+
+document.getElementById('btn-footer')!.addEventListener('click', () => {
+  if (!activeTab) return;
+  document.getElementById('footer-modal')!.classList.remove('hidden');
+  _drawFooterPreview();
+});
+document.getElementById('footer-cancel')!.addEventListener('click', () => {
+  document.getElementById('footer-modal')!.classList.add('hidden');
+});
+document.getElementById('footer-ok')!.addEventListener('click', _executeFooter);
+
+async function _executeFooter() {
+  if (!activeTab) return;
+  document.getElementById('footer-modal')!.classList.add('hidden');
+
+  const left     = _resolveFooterColForEmbed('left');
+  const center   = _resolveFooterColForEmbed('center');
+  const right    = _resolveFooterColForEmbed('right');
+  const fontSize = parseFloat((document.getElementById('footer-fontsize') as HTMLInputElement).value) || 10;
+
+  if (!left && !center && !right) return;
+
+  const tab   = activeTab;
+  const bytes = await embedFooter(tab.pdfBytes, { left, center, right, fontSize });
+
+  tab.pdfBytes = bytes;
+  tab.annotator!.clear();
+  const reloadEl = document.createElement('div');
+  reloadEl.className = 'loading-overlay';
+  reloadEl.innerHTML = '<div class="spinner"></div>';
+  tab.pane.appendChild(reloadEl);
+  tab.loadingEl = reloadEl;
+  finder.invalidateTab(tab);
+  await _loadTabContent(tab);
+  markDirty(tab);
+}
+
+// ── Add Watermark ───────────────────────────────────────────────
+
+function _drawWatermarkPreview() {
+  const canvas = document.getElementById('watermark-preview') as HTMLCanvasElement;
+  const ctx    = canvas.getContext('2d')!;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#1e1e1e';
+  ctx.fillRect(0, 0, W, H);
+
+  // Page outline
+  const mx = 8, my = 8, pw = W - mx * 2, ph = H - my * 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(mx, my, pw, ph);
+
+  const rawText  = (document.getElementById('watermark-text')     as HTMLTextAreaElement).value;
+  const pdfSize  = parseFloat((document.getElementById('watermark-fontsize') as HTMLInputElement).value) || 72;
+  const opacity  = parseFloat((document.getElementById('watermark-opacity')  as HTMLInputElement).value) / 100;
+  const angle    = parseFloat((document.getElementById('watermark-angle')    as HTMLInputElement).value) || 0;
+  const lines    = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const preview  = lines.length > 0 ? lines : ['Preview'];
+
+  const canvasFs   = Math.max(6, Math.round(pdfSize * pw / 612));
+  const lineHeight = canvasFs * 1.3;
+
+  ctx.save();
+  ctx.globalAlpha  = opacity;
+  ctx.fillStyle    = '#808080';
+  ctx.font         = `bold ${canvasFs}px Helvetica, Arial, sans-serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.translate(mx + pw / 2, my + ph / 2);
+  ctx.rotate(-angle * Math.PI / 180); // negative to match pdf-lib CCW convention
+  preview.forEach((line, i) => {
+    const yOffset = (i - (preview.length - 1) / 2) * lineHeight;
+    ctx.fillText(line, 0, yOffset);
+  });
+  ctx.restore();
+}
+
+document.getElementById('btn-watermark')!.addEventListener('click', () => {
+  if (!activeTab) return;
+  document.getElementById('watermark-modal')!.classList.remove('hidden');
+  _drawWatermarkPreview();
+});
+document.getElementById('watermark-cancel')!.addEventListener('click', () => {
+  document.getElementById('watermark-modal')!.classList.add('hidden');
+});
+document.getElementById('watermark-ok')!.addEventListener('click', _executeWatermark);
+
+const _wmOpacityInput = document.getElementById('watermark-opacity') as HTMLInputElement;
+const _wmOpacityVal   = document.getElementById('watermark-opacity-val')!;
+_wmOpacityInput.addEventListener('input', () => {
+  _wmOpacityVal.textContent = _wmOpacityInput.value + '%';
+  _drawWatermarkPreview();
+});
+(document.getElementById('watermark-text')     as HTMLTextAreaElement).addEventListener('input',  _drawWatermarkPreview);
+(document.getElementById('watermark-fontsize') as HTMLInputElement).addEventListener('input',  _drawWatermarkPreview);
+(document.getElementById('watermark-angle')    as HTMLInputElement).addEventListener('input',  _drawWatermarkPreview);
+(document.getElementById('watermark-angle')    as HTMLInputElement).addEventListener('change', _drawWatermarkPreview);
+
+async function _executeWatermark() {
+  if (!activeTab) return;
+  document.getElementById('watermark-modal')!.classList.add('hidden');
+
+  const text     = (document.getElementById('watermark-text')     as HTMLTextAreaElement).value
+                    .split('\n').map(l => l.trim()).filter(l => l.length > 0).join('\n');
+  const fontSize = parseFloat((document.getElementById('watermark-fontsize') as HTMLInputElement).value) || 72;
+  const opacity  = parseFloat((document.getElementById('watermark-opacity')  as HTMLInputElement).value) / 100;
+  const angle    = parseFloat((document.getElementById('watermark-angle')    as HTMLInputElement).value) || 0;
+
+  if (!text) return;
+
+  const tab   = activeTab;
+  const bytes = await embedWatermark(tab.pdfBytes, { text, fontSize, opacity, angle });
+
+  tab.pdfBytes = bytes;
+  tab.annotator!.clear();
   const reloadEl = document.createElement('div');
   reloadEl.className = 'loading-overlay';
   reloadEl.innerHTML = '<div class="spinner"></div>';

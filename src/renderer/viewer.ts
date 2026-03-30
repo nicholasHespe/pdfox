@@ -64,7 +64,7 @@ export class PDFViewer {
     this._annCache         = {}; // pageNum → cached annotation array
     this._pendingRender    = new Set(); // pageNums needing re-render once visible
     this._io               = null;  // IntersectionObserver for deferred renders
-    this._pageSizeCache    = {}; // pageNum → { width, height } in PDF pts — survives sleep
+    this._pageSizeCache    = {}; // pageNum → { width, height } in native (unrotated) PDF pts — survives sleep
     this.isSleeping        = false;
   }
 
@@ -232,12 +232,12 @@ export class PDFViewer {
     return page.getViewport({ scale: this.scale, rotation });
   }
 
-  // Returns { width, height } of the unscaled PDF page in PDF pts (no user rotation).
+  // Returns { width, height } of the unscaled PDF page in native PDF pts (no rotation).
   // Results are cached so this works even while the viewer is sleeping (pdfDoc is null).
   async getPageSize(pageNum: number): Promise<{ width: number; height: number }> {
     if (this._pageSizeCache[pageNum]) return this._pageSizeCache[pageNum];
     const page = await this.pdfDoc!.getPage(pageNum);
-    const vp   = page.getViewport({ scale: 1.0 });
+    const vp   = page.getViewport({ scale: 1.0, rotation: 0 });
     const size = { width: vp.width, height: vp.height };
     this._pageSizeCache[pageNum] = size;
     return size;
@@ -367,9 +367,9 @@ export class PDFViewer {
     const userRot  = this.pageRotations[pageNum] || 0;
     this.pageBaseRotations[pageNum] = page.rotate;
 
-    // Cache unscaled page size so getPageSize() works while sleeping.
+    // Cache unscaled native page size so getPageSize() works while sleeping.
     if (!this._pageSizeCache[pageNum]) {
-      const vp1 = page.getViewport({ scale: 1.0 });
+      const vp1 = page.getViewport({ scale: 1.0, rotation: 0 });
       this._pageSizeCache[pageNum] = { width: vp1.width, height: vp1.height };
     }
 
@@ -416,7 +416,7 @@ export class PDFViewer {
 
     // Populate the page-size cache on every render (cheap: page object is already fetched).
     if (!this._pageSizeCache[pageNum]) {
-      const vp1 = page.getViewport({ scale: 1.0 });
+      const vp1 = page.getViewport({ scale: 1.0, rotation: 0 });
       this._pageSizeCache[pageNum] = { width: vp1.width, height: vp1.height };
     }
 
@@ -449,6 +449,10 @@ export class PDFViewer {
       this.pages[idx] = { wrapper, canvas, textDiv, annotCanvas, formLayer, viewportTransform: viewport.transform };
     }
 
+    // Hide the wrapper while the canvas is blank so the browser never paints
+    // a blank hole between the canvas clear and the render completing.
+    wrapper.style.opacity = '0';
+
     // Resize wrapper and canvases to match viewport
     wrapper.style.width  = `${viewport.width}px`;
     wrapper.style.height = `${viewport.height}px`;
@@ -465,6 +469,7 @@ export class PDFViewer {
     // Render PDF content
     const ctx = canvas.getContext('2d')!;
     await page.render({ canvasContext: ctx, viewport }).promise;
+    wrapper.style.opacity = '';
 
     // Render text layer for selection (PDF.js 4.x class-based API)
     // setLayerDimensions() inside TextLayer constructor sets width/height via --scale-factor
