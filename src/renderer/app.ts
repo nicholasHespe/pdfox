@@ -1094,7 +1094,14 @@ async function printTab(tab: Tab | null) {
     await saveTab(tab);
     if (tab.dirty) return; // save was cancelled or failed
   }
-  await window.api.openPrintPreview(tab.filePath);
+  try {
+    const result = await window.api.openPrintPreview(tab.filePath);
+    if (!result.ok) {
+      await showDialog({ title: 'Print Error', message: result.error ?? 'Could not open print preview.', buttons: ['OK'], defaultId: 0, cancelId: 0 });
+    }
+  } catch (err) {
+    await showDialog({ title: 'Print Error', message: (err as Error).message ?? 'Could not open print preview.', buttons: ['OK'], defaultId: 0, cancelId: 0 });
+  }
 }
 
 async function reopenLastTab() {

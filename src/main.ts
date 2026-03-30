@@ -205,7 +205,6 @@ ipcMain.handle('notify-tab-transferred', (_event: IpcMainInvokeEvent, sourceWind
 });
 
 ipcMain.on('open-devtools', (event: IpcMainEvent) => {
-  if (app.isPackaged) return;
   BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
 });
 
@@ -263,13 +262,16 @@ ipcMain.handle('open-print-preview', async (_event: IpcMainInvokeEvent, filePath
     },
   });
 
-  await previewWin.loadFile(path.join(__dirname, '..', 'renderer', 'print-preview.html'));
-  previewWin.show();
-
-  const buffer = fs.readFileSync(filePath);
-  previewWin.webContents.send('pdf-data', { buffer: buffer.buffer });
-
-  return { ok: true };
+  try {
+    await previewWin.loadFile(path.join(__dirname, '..', 'renderer', 'print-preview.html'));
+    previewWin.show();
+    const buffer = fs.readFileSync(filePath);
+    previewWin.webContents.send('pdf-data', { buffer: buffer.buffer });
+    return { ok: true };
+  } catch (err) {
+    previewWin.destroy();
+    return { ok: false, error: (err as Error).message };
+  }
 });
 
 // Execute a silent print (no system dialog) from the preview window's renderer process.
@@ -469,7 +471,19 @@ function downloadPdfToTemp(url: string, redirectsLeft = 5): Promise<string> {
 // Resolve a target (URL or local path) to a local file path ready for opening.
 async function resolveTarget(target: string): Promise<string | null> {
   if (isHttpUrl(target)) {
-    try { return await downloadPdfToTemp(target); } catch { return null; }
+    try {
+      const filePath = await downloadPdfToTemp(target);
+      dialog.showMessageBox({
+        type:    'info',
+        title:   'Reamlet — Download complete',
+        message: `Downloaded to:\n${filePath}`,
+        buttons: ['OK'],
+      });
+      return filePath;
+    } catch (err) {
+      dialog.showErrorBox('Reamlet — Could not open URL', (err as Error).message ?? 'Download failed.');
+      return null;
+    }
   }
   return target;
 }

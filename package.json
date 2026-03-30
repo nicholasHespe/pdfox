@@ -98,7 +98,7 @@
     },
     "files": [
       "out/**/*",
-      "renderer/index.html",
+      "renderer/**/*",
       "assets/**/*",
       "node_modules/**/*"
     ]
